@@ -9,6 +9,8 @@ OID_MODELO = "1.3.6.1.2.1.25.3.2.1.3.1"
 OID_NOMBRES = "1.3.6.1.2.1.43.11.1.1.6.1"  
 OID_MAX_CAP = "1.3.6.1.2.1.43.11.1.1.8.1"  
 OID_ACTUAL = "1.3.6.1.2.1.43.11.1.1.9.1"   
+OID_CONTADOR_TOTAL = "1.3.6.1.2.1.43.10.2.1.4.1.1"
+OID_NUMERO_SERIE = "1.3.6.1.2.1.43.5.1.1.17.1.1"
 
 
 async def consultar_snmp_get(snmp_engine, target, oid, comunidad="public"):
@@ -50,16 +52,18 @@ async def consultar_snmp_walk(snmp_engine, target, oid_base, comunidad="public")
     return valores
 
 
-async def obtener_estado_toner(ip, comunidad="public"):
-    print(f"\nConectando a {ip}...")
+async def obtener_estado_toner(ip, timeout=3, comunidad="public"):
     snmp_engine = SnmpEngine()
     
     try:
-        target = await UdpTransportTarget.create((ip, 161), timeout=3.0, retries=1)
+        target = await UdpTransportTarget.create((ip, 161), timeout=timeout, retries=1)
     except Exception as e:
-        print(f"❌ Error de red: {e}")
         snmp_engine.close_dispatcher()
-        return
+        return {
+            "ip": ip, "marca": "SNMP", "mac": None, "modelo": None,
+            "numero_serie": None, "online": False, "estado": None,
+            "toner": {}, "paginas": {}, "error": "No responde",
+        }
     
     # 1. Traer información del hardware
     modelo = await consultar_snmp_get(snmp_engine, target, OID_MODELO, comunidad)
@@ -68,35 +72,45 @@ async def obtener_estado_toner(ip, comunidad="public"):
     nombres = await consultar_snmp_walk(snmp_engine, target, OID_NOMBRES, comunidad)
     capacidades_max = await consultar_snmp_walk(snmp_engine, target, OID_MAX_CAP, comunidad)
     niveles_actuales = await consultar_snmp_walk(snmp_engine, target, OID_ACTUAL, comunidad)
-    
-    if not nombres:
-        print(f"❌ No se detectaron consumibles válidos en la IP {ip}.")
-        snmp_engine.close_dispatcher()
-        return
+    contador_total = await consultar_snmp_get(
+        snmp_engine, target, OID_CONTADOR_TOTAL, comunidad
+    )
+    numero_serie = await consultar_snmp_get(
+        snmp_engine, target, OID_NUMERO_SERIE, comunidad
+    )
 
-    print(f"🖨️  Dispositivo: {modelo}")
-    print("-" * 60)
-    
-    # 3. Procesar y calcular porcentajes basándonos en tipos primitivos
-    for i in range(len(nombres)):
-        nombre_toner = nombres[i]
+    toners = {}
+    for i, nombre_toner in enumerate(nombres):
         try:
             max_cap = int(capacidades_max[i])
             actual = int(niveles_actuales[i])
         except (IndexError, ValueError, TypeError):
             continue
 
-        if actual == -3:
-            print(f"  🔹 {nombre_toner}: Estado OK (No mide porcentaje)")
-        elif actual == -2:
-            print(f"  🔹 {nombre_toner}: Nivel Bajo / Casi Agotado ⚠️")
-        elif actual < 0 or max_cap <= 0:
-            print(f"  🔹 {nombre_toner}: Error / Nivel no legible")
+        if actual < 0 or max_cap <= 0:
+            porcentaje = None
         else:
-            porcentaje = (actual / max_cap) * 100
-            print(f"  🔹 {nombre_toner}: {porcentaje:.1f}% restante ({actual}/{max_cap})")
-            
+            porcentaje = round((actual / max_cap) * 100, 1)
+        toners[nombre_toner] = porcentaje
+
+    try:
+        contador_total = int(contador_total)
+    except (TypeError, ValueError):
+        contador_total = None
+
     snmp_engine.close_dispatcher()
+    return {
+        "ip": ip,
+        "marca": "SNMP",
+        "mac": None,
+        "modelo": modelo,
+        "numero_serie": None if numero_serie == "Desconocido" else numero_serie,
+        "online": True,
+        "estado": "OK",
+        "toner": toners,
+        "paginas": {"impresiones_totales": contador_total} if contador_total is not None else {},
+        "error": None,
+    }
 
 
 async def main():

@@ -7,6 +7,8 @@ import re
 from typing import Callable, Optional 
 import xml.etree.ElementTree as ET 
 
+from scriptGeneral import obtener_estado_toner
+
 try: 
     import aiohttp 
 except ImportError:  # pragma: no cover - handled at runtime 
@@ -92,17 +94,39 @@ def _extraer_mac(printer: SyncThru) -> Optional[str]:
         pass
     return None
 
+
+def _extraer_numero_serie(printer: SyncThru) -> Optional[str]:
+    try:
+        datos_raw = printer.raw() or {}
+        identity = datos_raw.get("identity", {})
+        numero_serie = (
+            identity.get("serial_number")
+            or identity.get("serialNumber")
+            or identity.get("serial_no")
+            or identity.get("serialNo")
+        )
+        return str(numero_serie).strip() if numero_serie else None
+    except Exception:
+        return None
+
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
-async def consultar_una_impresora(ip: str, timeout: int = 8) -> dict: 
+async def consultar_una_impresora(ip: str, timeout: int = 8, marca: str = "Samsung") -> dict:
     """Consulta una impresora Samsung SyncThru coordinando sus subtareas.""" 
-    if aiohttp is None or SyncThru is None: 
+    if marca != "Samsung":
+        resultado = await obtener_estado_toner(ip, timeout=timeout)
+        resultado["marca"] = marca
+        return resultado
+
+    if aiohttp is None or SyncThru is None:
         raise RuntimeError("Faltan dependencias. Instala pysyncthru y aiohttp.") 
     
     resultado = { 
         "ip": ip, 
+        "marca": marca,
         "mac": None,
         "modelo": None, 
+        "numero_serie": None,
         "online": False, 
         "estado": None, 
         "toner": {}, 
@@ -126,6 +150,7 @@ async def consultar_una_impresora(ip: str, timeout: int = 8) -> dict:
                 resultado["toner"] = _extraer_toner(printer) 
                 resultado["paginas"] = _extraer_paginas(printer) 
                 resultado["mac"] = _extraer_mac(printer)
+                resultado["numero_serie"] = _extraer_numero_serie(printer)
                 
             else: 
                 resultado["error"] = "La impresora respondió pero figura como offline." 
@@ -141,15 +166,17 @@ async def consultar_una_impresora(ip: str, timeout: int = 8) -> dict:
 
 
 async def consultar_todas( 
-    ips: list[str], 
+    ips: list[str | dict],
     timeout: int, 
     progreso_callback: Optional[Callable[[int, int, str, Optional[dict]], None]] = None 
 ) -> list[dict]: 
     resultados = [] 
-    for i, ip in enumerate(ips, start=1): 
+    for i, item in enumerate(ips, start=1):
+        ip = item["ip"] if isinstance(item, dict) else item
+        marca = item.get("marca", "Samsung") if isinstance(item, dict) else "Samsung"
         if progreso_callback: 
             progreso_callback(i, len(ips), ip, None) 
-        data = await consultar_una_impresora(ip, timeout=timeout) 
+        data = await consultar_una_impresora(ip, timeout=timeout, marca=marca)
         resultados.append(data) 
         if progreso_callback: 
             progreso_callback(i, len(ips), ip, data) 

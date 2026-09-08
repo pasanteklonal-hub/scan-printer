@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scanner_db import init_db, load_ips, load_last_results, save_ips, save_scan_results, sanitize_for_json
+from scanner_db import init_db, load_ips, load_last_results, load_printers, save_ips, save_scan_results, sanitize_for_json
 from scanner_service import IP_REGEX, limpiar_ip
 
 
@@ -29,6 +29,16 @@ class TestScannerDb(unittest.TestCase):
     def test_save_and_load_ips(self):
         save_ips(["192.168.0.10", "192.168.0.20"], db_path=self.db_path)
         self.assertEqual(load_ips(db_path=self.db_path), ["192.168.0.10", "192.168.0.20"])
+
+    def test_save_and_load_printers_with_brand(self):
+        save_ips([
+            {"ip": "192.168.0.10", "marca": "Samsung"},
+            {"ip": "192.168.0.20", "marca": "HP"},
+        ], db_path=self.db_path)
+        self.assertEqual(load_printers(db_path=self.db_path), [
+            {"ip": "192.168.0.10", "marca": "Samsung"},
+            {"ip": "192.168.0.20", "marca": "HP"},
+        ])
 
     def test_save_and_load_results(self):
         results = [{"ip": "192.168.0.10", "modelo": "X", "toner": {"cyan": 80}, "error": None}]

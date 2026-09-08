@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-DEFAULT_DB_PATH = Path(__file__).with_name("scanner.db")
+DEFAULT_DB_PATH = Path(__file__).with_name("estado-impresoras") / "scanner.db"
+LEGACY_DB_PATH = Path(__file__).with_name("scanner.db")
 
 
 def sanitize_for_json(value: Any) -> Any:
@@ -28,16 +29,21 @@ def sanitize_for_json(value: Any) -> Any:
 
 def init_db(db_path: Optional[Path | str] = None) -> Path:
     path = Path(db_path or DEFAULT_DB_PATH)
+    migrate_legacy = db_path is None and not path.exists() and LEGACY_DB_PATH.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     try:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ips (
-                ip TEXT PRIMARY KEY
+                ip TEXT PRIMARY KEY,
+                marca TEXT NOT NULL DEFAULT 'Samsung'
             )
             """
         )
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(ips)")}
+        if "marca" not in columns:
+            conn.execute("ALTER TABLE ips ADD COLUMN marca TEXT NOT NULL DEFAULT 'Samsung'")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS scan_results (
@@ -50,15 +56,42 @@ def init_db(db_path: Optional[Path | str] = None) -> Path:
         conn.commit()
     finally:
         conn.close()
+
+    if migrate_legacy:
+        legacy = sqlite3.connect(LEGACY_DB_PATH)
+        current = sqlite3.connect(path)
+        try:
+            legacy_rows = legacy.execute("SELECT ip FROM ips ORDER BY ip").fetchall()
+            current.executemany(
+                "INSERT OR IGNORE INTO ips(ip, marca) VALUES (?, 'Samsung')",
+                legacy_rows,
+            )
+            result = legacy.execute(
+                "SELECT payload FROM scan_results ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if result:
+                current.execute("INSERT INTO scan_results(payload) VALUES (?)", result)
+            current.commit()
+        finally:
+            legacy.close()
+            current.close()
     return path
 
 
-def save_ips(ips: list[str], db_path: Optional[Path | str] = None) -> None:
+def save_ips(ips: list[str | dict], db_path: Optional[Path | str] = None) -> None:
     path = init_db(db_path)
     conn = sqlite3.connect(path)
     try:
         conn.execute("DELETE FROM ips")
-        conn.executemany("INSERT INTO ips(ip) VALUES (?)", [(ip,) for ip in ips])
+        conn.executemany(
+            "INSERT INTO ips(ip, marca) VALUES (?, ?)",
+            [
+                (item["ip"], item.get("marca", "Samsung"))
+                if isinstance(item, dict)
+                else (item, "Samsung")
+                for item in ips
+            ],
+        )
         conn.commit()
     finally:
         conn.close()
@@ -72,6 +105,16 @@ def load_ips(db_path: Optional[Path | str] = None) -> list[str]:
     finally:
         conn.close()
     return [row[0] for row in rows]
+
+
+def load_printers(db_path: Optional[Path | str] = None) -> list[dict]:
+    path = init_db(db_path)
+    conn = sqlite3.connect(path)
+    try:
+        rows = conn.execute("SELECT ip, marca FROM ips ORDER BY ip").fetchall()
+    finally:
+        conn.close()
+    return [{"ip": row[0], "marca": row[1]} for row in rows]
 
 
 def save_scan_results(results: list[dict], db_path: Optional[Path | str] = None) -> None:

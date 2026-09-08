@@ -11,18 +11,18 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
-from scanner_db import load_ips, save_ips, save_scan_results, load_last_results, sanitize_for_json
+from scanner_db import load_printers, save_ips, save_scan_results, load_last_results, sanitize_for_json
 from scanner_service import IP_REGEX, consultar_todas, limpiar_ip
 
 
 class ScannerApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Escáner de Toner — Impresoras Samsung SyncThru")
+        self.title("Escáner de impresoras")
         self.geometry("720x560")
         self.resizable(True, True)
 
-        self.ips: list[str] = []
+        self.ips: list[dict] = []
         self.resultados_finales: list[dict] = []
 
         self._construir_ui()
@@ -32,9 +32,8 @@ class ScannerApp(tk.Tk):
         adv = tk.Label(
             self,
             text=(
-                "⚠️ Advertencia: esta herramienta solo funciona con impresoras SAMSUNG "
-                "que tengan el servicio SyncThru Web Service. Otras marcas o modelos "
-                "no compatibles quedarán marcados como error/offline."
+                "Seleccione la marca de cada impresora. Samsung usa SyncThru; HP y otras "
+                "marcas se consultan mediante SNMP."
             ),
             wraplength=700,
             justify="left",
@@ -52,6 +51,13 @@ class ScannerApp(tk.Tk):
         self.entry_ip = ttk.Entry(frame_ip)
         self.entry_ip.pack(side="left", fill="x", expand=True, padx=8)
         self.entry_ip.bind("<Return>", lambda e: self.agregar_ip())
+
+        ttk.Label(frame_ip, text="Marca:").pack(side="left")
+        self.combo_marca = ttk.Combobox(
+            frame_ip, values=("Samsung", "HP"), state="readonly", width=10
+        )
+        self.combo_marca.set("Samsung")
+        self.combo_marca.pack(side="left", padx=(4, 8))
 
         ttk.Button(frame_ip, text="Agregar IP", command=self.agregar_ip).pack(side="left", padx=2)
         ttk.Button(frame_ip, text="Quitar seleccionada", command=self.quitar_ip).pack(side="left", padx=2)
@@ -85,16 +91,20 @@ class ScannerApp(tk.Tk):
         self.log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def _cargar_estado_guardado(self):
-        ips_guardadas = load_ips()
-        if ips_guardadas:
-            self.ips = ips_guardadas
-            for ip in ips_guardadas:
-                self.listbox.insert("end", ip)
+        impresoras_guardadas = load_printers()
+        if impresoras_guardadas:
+            self.ips = impresoras_guardadas
+            for impresora in impresoras_guardadas:
+                self.listbox.insert("end", self._texto_impresora(impresora))
 
         resultados_guardados = load_last_results()
         if resultados_guardados:
             self.resultados_finales = resultados_guardados
             self.log_msg("Se cargaron resultados previos desde la base de datos.")
+
+    @staticmethod
+    def _texto_impresora(impresora: dict) -> str:
+        return f"{impresora['ip']}  [{impresora.get('marca', 'Samsung')}]"
 
     def log_msg(self, texto: str):
         self.log.config(state="normal")
@@ -112,12 +122,13 @@ class ScannerApp(tk.Tk):
             messagebox.showwarning("IP inválida", f"'{ip_raw}' no parece una dirección IP válida.")
             return
 
-        if ip in self.ips:
+        if any(item["ip"] == ip for item in self.ips):
             messagebox.showinfo("Ya existe", f"La IP {ip} ya está en el listado.")
             return
 
-        self.ips.append(ip)
-        self.listbox.insert("end", ip)
+        impresora = {"ip": ip, "marca": self.combo_marca.get()}
+        self.ips.append(impresora)
+        self.listbox.insert("end", self._texto_impresora(impresora))
         self.entry_ip.delete(0, "end")
         save_ips(self.ips)
 
@@ -125,10 +136,9 @@ class ScannerApp(tk.Tk):
         seleccion = list(self.listbox.curselection())
         seleccion.reverse()
         for idx in seleccion:
-            ip = self.listbox.get(idx)
+            ip = self.ips[idx]["ip"]
             self.listbox.delete(idx)
-            if ip in self.ips:
-                self.ips.remove(ip)
+            self.ips.pop(idx)
         save_ips(self.ips)
 
     def limpiar_listado(self):
