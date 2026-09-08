@@ -1,0 +1,122 @@
+[
+  {
+    "ip": "192.168.0.101",
+    "mac": null,
+    "serie": "Z5THBAGBC00009K",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 55
+    },
+    "paginas": {
+      "impresiones_totales": 154567
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.28",
+    "mac": null,
+    "serie": "Z5THB8GC6F003HR",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 19
+    },
+    "paginas": {
+      "impresiones_totales": 184378
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.32",
+    "mac": null,
+    "serie": "Z5THBAGBC00031Y",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 93
+    },
+    "paginas": {
+      "impresiones_totales": 158820
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.70",
+    "mac": null,
+    "serie": "Z5THBAGBC00113N",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 81
+    },
+    "paginas": {
+      "impresiones_totales": 115347
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.80",
+    "mac": null,
+    "serie": "Z5THB8GC6F001EM",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 61
+    },
+    "paginas": {
+      "impresiones_totales": 111742
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.81",
+    "mac": null,
+    "serie": "Z5THBAGBC00004W",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 72
+    },
+    "paginas": {
+      "impresiones_totales": 198801
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.46",
+    "mac": null,
+    "serie": "Z5THBAGBC00050W",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 89
+    },
+    "paginas": {
+      "impresiones_totales": 146651
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.47",
+    "mac": null,
+    "serie": "Z5THBAGBC00125X",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 54
+    },
+    "paginas": {
+      "impresiones_totales": 324244
+    },
+    "error": null
+  }
+]

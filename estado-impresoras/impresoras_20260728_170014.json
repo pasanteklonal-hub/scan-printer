@@ -1,0 +1,90 @@
+[
+  {
+    "ip": "192.168.0.101",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 56
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.17",
+    "modelo": null,
+    "online": true,
+    "estado": "SyncthruState.UNKNOWN",
+    "toner": {},
+    "error": null
+  },
+  {
+    "ip": "192.168.0.28",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 22
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.32",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 98
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.70",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 82
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.80",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 63
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.81",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 81
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.46",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 100
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.47",
+    "modelo": "Samsung ML-371x Series",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 56
+    },
+    "error": null
+  }
+]
