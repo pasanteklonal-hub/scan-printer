@@ -1,0 +1,178 @@
+[
+  {
+    "ip": "192.168.0.101",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:3B:83",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 50
+    },
+    "paginas": {
+      "impresiones_totales": 155192
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.28",
+    "marca": "Samsung",
+    "mac": "00:15:99:A8:A3:FE",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 76
+    },
+    "paginas": {
+      "impresiones_totales": 185854
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.30",
+    "marca": "HP",
+    "mac": null,
+    "modelo": "HP LaserJet CP1525nw",
+    "numero_serie": null,
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "Black Cartridge HP CB540A": 51.0
+    },
+    "paginas": {
+      "impresiones_totales": 49043
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.32",
+    "marca": "Samsung",
+    "mac": "00:15:99:8D:02:A1",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 36
+    },
+    "paginas": {
+      "impresiones_totales": 33752
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.59",
+    "marca": "HP",
+    "mac": null,
+    "modelo": "HP LaserJet 5200",
+    "numero_serie": null,
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "1": 100.0
+    },
+    "paginas": {
+      "impresiones_totales": 12348
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.70",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:38:3E",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 54
+    },
+    "paginas": {
+      "impresiones_totales": 116886
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.71",
+    "marca": "HP",
+    "mac": null,
+    "modelo": "HP LaserJet M402dn",
+    "numero_serie": null,
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "Black Cartridge HP CF226X": 71.0
+    },
+    "paginas": {
+      "impresiones_totales": 12181
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.80",
+    "marca": "Samsung",
+    "mac": "00:15:99:A8:A3:C3",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 43
+    },
+    "paginas": {
+      "impresiones_totales": 113182
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.81",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:3B:85",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 73
+    },
+    "paginas": {
+      "impresiones_totales": 202568
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.46",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:37:AA",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 90
+    },
+    "paginas": {
+      "impresiones_totales": 153095
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.47",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:37:A6",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": null,
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 100
+    },
+    "paginas": {
+      "impresiones_totales": 327637
+    },
+    "error": null
+  }
+]

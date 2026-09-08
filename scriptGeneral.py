@@ -1,16 +1,110 @@
 import asyncio
+import re
 from pysnmp.hlapi.v3arch.asyncio import (
     get_cmd, next_cmd, SnmpEngine, CommunityData,
     UdpTransportTarget, ContextData, ObjectType, ObjectIdentity
 )
 
+try:
+    import aiohttp
+except ImportError:  # pragma: no cover
+    aiohttp = None
+
 # OIDs Estándar internacionales (RFC 3805 - Printer MIB)
 OID_MODELO = "1.3.6.1.2.1.25.3.2.1.3.1"   
+OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0"
+OID_MAC = "1.3.6.1.2.1.2.2.1.6"
+OID_MAC_PREFIX = f"{OID_MAC}."
 OID_NOMBRES = "1.3.6.1.2.1.43.11.1.1.6.1"  
 OID_MAX_CAP = "1.3.6.1.2.1.43.11.1.1.8.1"  
 OID_ACTUAL = "1.3.6.1.2.1.43.11.1.1.9.1"   
 OID_CONTADOR_TOTAL = "1.3.6.1.2.1.43.10.2.1.4.1.1"
 OID_NUMERO_SERIE = "1.3.6.1.2.1.43.5.1.1.17.1.1"
+
+
+def extraer_numero_serie_html(html):
+    match = re.search(
+        r"Número\s+de\s+serie\s+de\s+la\s+impresora\s*:\s*([^<]+)",
+        html,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).strip() if match else None
+
+
+def extraer_numero_serie_sysdescr(sysdescr):
+    match = re.search(r"\bS/?N\s*[:#]?\s*([^;,\s]+)", sysdescr, flags=re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def normalizar_mac_snmp(valor):
+    if valor is None:
+        return None
+
+    if hasattr(valor, "asOctets"):
+        octetos = list(valor.asOctets())
+    elif isinstance(valor, (bytes, bytearray)):
+        octetos = list(valor)
+    else:
+        texto = str(valor).strip()
+        encontrados = re.findall(r"(?i)(?<![0-9a-f])[0-9a-f]{2}(?![0-9a-f])", texto)
+        if len(encontrados) == 6:
+            octetos = [int(octeto, 16) for octeto in encontrados]
+        else:
+            return None
+
+    if len(octetos) != 6:
+        return None
+    return ":".join(f"{octeto:02X}" for octeto in octetos)
+
+
+async def consultar_numero_serie_web(ip, timeout):
+    if aiohttp is None:
+        return None
+    try:
+        timeout_cfg = aiohttp.ClientTimeout(total=timeout)
+        async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
+            async with session.get(f"http://{ip}/") as response:
+                if response.status != 200:
+                    return None
+                return extraer_numero_serie_html(await response.text())
+    except Exception:
+        return None
+
+
+async def consultar_numero_serie_snmp(ip, timeout=3, comunidad="public"):
+    snmp_engine = SnmpEngine()
+    try:
+        target = await UdpTransportTarget.create(
+            (ip, 161), timeout=timeout, retries=1
+        )
+        sysdescr = await consultar_snmp_get(
+            snmp_engine, target, OID_SYS_DESCR, comunidad
+        )
+        return extraer_numero_serie_sysdescr(sysdescr)
+    except Exception:
+        return None
+    finally:
+        snmp_engine.close_dispatcher()
+
+
+async def consultar_mac_snmp(ip, timeout=3, comunidad="public"):
+    snmp_engine = SnmpEngine()
+    try:
+        target = await UdpTransportTarget.create(
+            (ip, 161), timeout=timeout, retries=1
+        )
+        for indice in range(1, 17):
+            valor = await consultar_snmp_get_raw(
+                snmp_engine, target, f"{OID_MAC_PREFIX}{indice}", comunidad
+            )
+            mac = normalizar_mac_snmp(valor)
+            if mac and mac != "00:00:00:00:00:00":
+                return mac
+        return None
+    except Exception:
+        return None
+    finally:
+        snmp_engine.close_dispatcher()
 
 
 async def consultar_snmp_get(snmp_engine, target, oid, comunidad="public"):
@@ -30,6 +124,20 @@ async def consultar_snmp_get(snmp_engine, target, oid, comunidad="public"):
         return str(varBinds[0][1])
     except Exception:
         return "Desconocido"
+
+
+async def consultar_snmp_get_raw(snmp_engine, target, oid, comunidad="public"):
+    try:
+        res = await get_cmd(
+            snmp_engine, CommunityData(comunidad, mpModel=0), target, ContextData(),
+            ObjectType(ObjectIdentity(oid))
+        )
+        error_indication, error_status, _, var_binds = res
+        if error_indication or error_status or not var_binds:
+            return None
+        return var_binds[0][1]
+    except Exception:
+        return None
 
 
 async def consultar_snmp_walk(snmp_engine, target, oid_base, comunidad="public"):
@@ -67,6 +175,7 @@ async def obtener_estado_toner(ip, timeout=3, comunidad="public"):
     
     # 1. Traer información del hardware
     modelo = await consultar_snmp_get(snmp_engine, target, OID_MODELO, comunidad)
+    sysdescr = await consultar_snmp_get(snmp_engine, target, OID_SYS_DESCR, comunidad)
     
     # 2. Traer listas de datos de los tóners
     nombres = await consultar_snmp_walk(snmp_engine, target, OID_NOMBRES, comunidad)
@@ -78,6 +187,8 @@ async def obtener_estado_toner(ip, timeout=3, comunidad="public"):
     numero_serie = await consultar_snmp_get(
         snmp_engine, target, OID_NUMERO_SERIE, comunidad
     )
+    numero_serie_web = await consultar_numero_serie_web(ip, timeout)
+    mac = await consultar_mac_snmp(ip, timeout, comunidad)
 
     toners = {}
     for i, nombre_toner in enumerate(nombres):
@@ -102,9 +213,13 @@ async def obtener_estado_toner(ip, timeout=3, comunidad="public"):
     return {
         "ip": ip,
         "marca": "SNMP",
-        "mac": None,
+        "mac": mac,
         "modelo": modelo,
-        "numero_serie": None if numero_serie == "Desconocido" else numero_serie,
+        "numero_serie": (
+            numero_serie_web
+            or extraer_numero_serie_sysdescr(sysdescr)
+            or (None if numero_serie == "Desconocido" else numero_serie)
+        ),
         "online": True,
         "estado": "OK",
         "toner": toners,

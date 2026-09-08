@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import shutil
+from pathlib import Path
 
 import pandas as pd
 
@@ -17,9 +18,10 @@ from openpyxl.styles import (
 from openpyxl.utils import get_column_letter
 
 
-ARCHIVO_BASE = "impresoras.xlsx"
-ARCHIVO_SALIDA = "impresoras_al_dia.xlsx"
-CARPETA_JSON = "consumo_diario"
+BASE_DIR = Path(__file__).resolve().parent
+ARCHIVO_BASE = BASE_DIR / "impresoras.xlsx"
+ARCHIVO_SALIDA = BASE_DIR / "impresoras_al_dia.xlsx"
+CARPETA_JSON = BASE_DIR / "estado-impresoras"
 
 
 def normalizar_mac(mac):
@@ -34,9 +36,17 @@ def normalizar_mac(mac):
     )
 
 
+def normalizar_ip(ip):
+
+    if pd.isna(ip):
+        return None
+
+    return str(ip).strip()
+
+
 def obtener_ultimo_json():
 
-    archivos = glob.glob("impresoras_*.json")
+    archivos = glob.glob(str(CARPETA_JSON / "impresoras_*.json"))
 
     if not archivos:
         raise FileNotFoundError(
@@ -56,8 +66,9 @@ def leer_json(ruta_json):
     for imp in datos:
 
         mac = normalizar_mac(imp.get("mac"))
+        ip = normalizar_ip(imp.get("ip"))
 
-        if not mac:
+        if not mac and not ip:
             continue
 
         toner = ""
@@ -74,11 +85,16 @@ def leer_json(ruta_json):
                 "",
             )
 
-        indice[mac] = {
+        registro = {
             "IP": imp.get("ip", ""),
             "NIVEL_TONER": toner,
             "IMPRESIONES_TOTALES": paginas,
+            "NUMERO_SERIE": imp.get("numero_serie", ""),
         }
+        if mac:
+            indice[mac] = registro
+        if ip:
+            indice[f"IP:{ip}"] = registro
 
     return indice
 
@@ -161,6 +177,7 @@ def aplicar_formato():
     col_ip = columnas["IP"]
     col_toner = columnas["NIVEL_TONER"]
     col_pag = columnas["IMPRESIONES_TOTALES"]
+    col_serie = columnas["NUMERO_SERIE"]
 
     # -----------------------------
     # Filas
@@ -173,6 +190,7 @@ def aplicar_formato():
         toner = ws[f"{col_toner}{fila}"]
 
         paginas = ws[f"{col_pag}{fila}"]
+        serie = ws[f"{col_serie}{fila}"]
 
         # Fuente y bordes
 
@@ -183,6 +201,7 @@ def aplicar_formato():
         ip.alignment = Alignment(horizontal="center")
         toner.alignment = Alignment(horizontal="center")
         paginas.alignment = Alignment(horizontal="center")
+        serie.alignment = Alignment(horizontal="center")
 
         # Impresora sin respuesta
 
@@ -262,29 +281,25 @@ def actualizar():
     df["MAC"] = df["MAC"].apply(
         normalizar_mac
     )
+    ips_base = df["IP"].apply(normalizar_ip) if "IP" in df else pd.Series(index=df.index)
 
     datos = leer_json(ultimo_json)
 
-    df["IP"] = df["MAC"].map(
-        lambda m: datos.get(m, {}).get(
-            "IP",
-            "",
-        )
+    def obtener_dato(fila, campo):
+        registro = datos.get(fila["MAC"])
+        if registro is None:
+            registro = datos.get(f"IP:{ips_base.loc[fila.name]}", {})
+        return registro.get(campo, "")
+
+    df["IP"] = df.apply(lambda fila: obtener_dato(fila, "IP"), axis=1)
+
+    df["NIVEL_TONER"] = df.apply(lambda fila: obtener_dato(fila, "NIVEL_TONER"), axis=1)
+
+    df["IMPRESIONES_TOTALES"] = df.apply(
+        lambda fila: obtener_dato(fila, "IMPRESIONES_TOTALES"), axis=1
     )
 
-    df["NIVEL_TONER"] = df["MAC"].map(
-        lambda m: datos.get(m, {}).get(
-            "NIVEL_TONER",
-            "",
-        )
-    )
-
-    df["IMPRESIONES_TOTALES"] = df["MAC"].map(
-        lambda m: datos.get(m, {}).get(
-            "IMPRESIONES_TOTALES",
-            "",
-        )
-    )
+    df["NUMERO_SERIE"] = df.apply(lambda fila: obtener_dato(fila, "NUMERO_SERIE"), axis=1)
 
     df.to_excel(
         ARCHIVO_SALIDA,
@@ -292,7 +307,10 @@ def actualizar():
     )
 
     aplicar_formato()
-    exportar_pdf_libreoffice()
+    try:
+        exportar_pdf_libreoffice()
+    except FileNotFoundError as exc:
+        print(f"⚠ PDF no generado: {exc}")
 
     print(
         f"✔ Archivo generado: {ARCHIVO_SALIDA}"
@@ -303,7 +321,7 @@ def actualizar():
 
 def exportar_pdf_libreoffice():
 
-    temporal = "__tmp_impresoras.xlsx"
+    temporal = BASE_DIR / "__tmp_impresoras.xlsx"
 
     shutil.copy2(ARCHIVO_SALIDA, temporal)
 
@@ -348,8 +366,8 @@ def exportar_pdf_libreoffice():
             "--convert-to",
             "pdf",
             "--outdir",
-            ".",
-            temporal,
+            str(BASE_DIR),
+            str(temporal),
         ],
         check=True,
     )
@@ -357,15 +375,14 @@ def exportar_pdf_libreoffice():
     os.remove(temporal)
 
     # Renombrar el PDF
-    if os.path.exists("__tmp_impresoras.pdf"):
+    pdf_temporal = BASE_DIR / "__tmp_impresoras.pdf"
+    pdf_salida = BASE_DIR / "impresoras_al_dia.pdf"
+    if pdf_temporal.exists():
 
-        if os.path.exists("impresoras_al_dia.pdf"):
-            os.remove("impresoras_al_dia.pdf")
+        if pdf_salida.exists():
+            pdf_salida.unlink()
 
-        os.rename(
-            "__tmp_impresoras.pdf",
-            "impresoras_al_dia.pdf",
-        )
+        pdf_temporal.rename(pdf_salida)
 
     print("✔ PDF generado correctamente.")
 

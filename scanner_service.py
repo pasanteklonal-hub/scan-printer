@@ -7,7 +7,7 @@ import re
 from typing import Callable, Optional 
 import xml.etree.ElementTree as ET 
 
-from scriptGeneral import obtener_estado_toner
+from scriptGeneral import consultar_mac_snmp, consultar_numero_serie_snmp, obtener_estado_toner
 
 try: 
     import aiohttp 
@@ -98,14 +98,24 @@ def _extraer_mac(printer: SyncThru) -> Optional[str]:
 def _extraer_numero_serie(printer: SyncThru) -> Optional[str]:
     try:
         datos_raw = printer.raw() or {}
-        identity = datos_raw.get("identity", {})
-        numero_serie = (
-            identity.get("serial_number")
-            or identity.get("serialNumber")
-            or identity.get("serial_no")
-            or identity.get("serialNo")
+        if isinstance(datos_raw, dict):
+            identity = datos_raw.get("identity", {})
+            numero_serie = (
+                identity.get("serial_number")
+                or identity.get("serialNumber")
+                or identity.get("serial_no")
+                or identity.get("serialNo")
+            )
+            if numero_serie:
+                return str(numero_serie).strip()
+
+        html = datos_raw if isinstance(datos_raw, str) else str(datos_raw)
+        match = re.search(
+            r'<div[^>]*class=["\'][^"\']*x-column[^"\']*["\'][^>]*>\s*([^<]+?)\s*</div>',
+            html,
+            flags=re.IGNORECASE,
         )
-        return str(numero_serie).strip() if numero_serie else None
+        return match.group(1).strip() if match else None
     except Exception:
         return None
 
@@ -142,6 +152,9 @@ async def consultar_una_impresora(ip: str, timeout: int = 8, marca: str = "Samsu
             
             resultado["online"] = bool(printer.is_online()) 
             resultado["estado"] = printer.device_status() 
+            resultado["mac"] = _extraer_mac(printer)
+            if resultado["mac"] is None:
+                resultado["mac"] = await consultar_mac_snmp(ip, timeout=timeout)
             
             if resultado["online"]: 
                 resultado["modelo"] = printer.model() 
@@ -149,8 +162,11 @@ async def consultar_una_impresora(ip: str, timeout: int = 8, marca: str = "Samsu
                 # Ejecución de las tareas delegadas
                 resultado["toner"] = _extraer_toner(printer) 
                 resultado["paginas"] = _extraer_paginas(printer) 
-                resultado["mac"] = _extraer_mac(printer)
                 resultado["numero_serie"] = _extraer_numero_serie(printer)
+                if resultado["numero_serie"] is None:
+                    resultado["numero_serie"] = await consultar_numero_serie_snmp(
+                        ip, timeout=timeout
+                    )
                 
             else: 
                 resultado["error"] = "La impresora respondió pero figura como offline." 

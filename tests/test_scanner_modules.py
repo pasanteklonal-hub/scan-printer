@@ -6,7 +6,12 @@ import unittest
 from pathlib import Path
 
 from scanner_db import init_db, load_ips, load_last_results, load_printers, save_ips, save_scan_results, sanitize_for_json
-from scanner_service import IP_REGEX, limpiar_ip
+from scanner_service import IP_REGEX, _extraer_numero_serie, limpiar_ip
+from scriptGeneral import (
+    extraer_numero_serie_html,
+    extraer_numero_serie_sysdescr,
+    normalizar_mac_snmp,
+)
 
 
 class TestScannerService(unittest.TestCase):
@@ -15,6 +20,54 @@ class TestScannerService(unittest.TestCase):
 
     def test_ip_regex_accepts_ipv4(self):
         self.assertTrue(IP_REGEX.match("192.168.0.1"))
+
+    def test_extracts_samsung_serial_from_identity_html(self):
+        class PrinterDummy:
+            def raw(self):
+                return '<div class="x-column" style="width:240px;">Z5THB8GC6F001EM </div>'
+
+        self.assertEqual(_extraer_numero_serie(PrinterDummy()), "Z5THB8GC6F001EM")
+
+    def test_extracts_hp_serial_from_option_html(self):
+        html = "<option value=\"x\">Número de serie de la impresora:  CNHXJ23710</option>"
+        self.assertEqual(extraer_numero_serie_html(html), "CNHXJ23710")
+
+    def test_extracts_serial_from_snmp_sysdescr(self):
+        sysdescr = (
+            "Samsung ML-371x Series; V2.10.01.36;NIC V4.01.16;"
+            "S/N Z5THB8GC6F001EM"
+        )
+        self.assertEqual(
+            extraer_numero_serie_sysdescr(sysdescr), "Z5THB8GC6F001EM"
+        )
+
+    def test_extracts_hp_serial_from_snmp_sysdescr(self):
+        sysdescr = "HP ETHERNET MULTI-ENVIRONMENT,SN:BRBSHCQ3PB,FN:4K004T3"
+        self.assertEqual(
+            extraer_numero_serie_sysdescr(sysdescr), "BRBSHCQ3PB"
+        )
+
+    def test_normalizes_snmp_mac_to_excel_format(self):
+        self.assertEqual(
+            normalizar_mac_snmp("48 0F CF F9 41 7B"),
+            "48:0F:CF:F9:41:7B",
+        )
+
+    def test_normalizes_snmp_mac_bytes_to_excel_format(self):
+        self.assertEqual(
+            normalizar_mac_snmp(bytes.fromhex("480FCFF9417B")),
+            "48:0F:CF:F9:41:7B",
+        )
+
+    def test_normalizes_snmp_octet_string_to_excel_format(self):
+        class OctetStringDummy:
+            def asOctets(self):
+                return bytes.fromhex("480FCFF9417B")
+
+        self.assertEqual(
+            normalizar_mac_snmp(OctetStringDummy()),
+            "48:0F:CF:F9:41:7B",
+        )
 
 
 class TestScannerDb(unittest.TestCase):

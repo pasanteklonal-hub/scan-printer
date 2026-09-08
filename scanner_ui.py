@@ -3,12 +3,14 @@
 Este módulo contiene la ventana Tkinter, el manejo de la lista de IPs,
 el inicio del escaneo y la exportación de resultados a JSON.
 """
-import os
 import asyncio
 import json
+import subprocess
+import sys
 import threading
 import tkinter as tk
 from datetime import datetime
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from scanner_db import load_printers, save_ips, save_scan_results, load_last_results, sanitize_for_json
@@ -190,15 +192,14 @@ class ScannerApp(tk.Tk):
         ok = sum(1 for r in resultados if r["error"] is None)
         self.log_msg(f"\nEscaneo terminado: {ok}/{len(resultados)} impresoras respondieron correctamente.")
 
-        # 1. Definir y asegurar que exista la carpeta "estado-impresoras"
-        carpeta_destino = "estado-impresoras"
-        if not os.path.exists(carpeta_destino):
-            os.makedirs(carpeta_destino)
+        # Guardar siempre junto a la aplicación, independientemente del directorio de ejecución.
+        carpeta_destino = Path(__file__).with_name("estado-impresoras")
+        carpeta_destino.mkdir(parents=True, exist_ok=True)
 
         default_name = f"impresoras_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         ruta = filedialog.asksaveasfilename(
             title="Guardar JSON final",
-            initialdir=carpeta_destino,
+            initialdir=str(carpeta_destino),
             defaultextension=".json",
             initialfile=default_name,
             filetypes=[("Archivo JSON", "*.json")],
@@ -212,7 +213,31 @@ class ScannerApp(tk.Tk):
             json.dump(payload, f, indent=2, ensure_ascii=False)
 
         self.log_msg(f"JSON guardado en: {ruta}")
+        threading.Thread(
+            target=self._actualizar_listado_automaticamente,
+            daemon=True,
+        ).start()
         messagebox.showinfo("Listo", f"JSON generado:\n{ruta}\n\n{ok}/{len(resultados)} impresoras OK.")
+
+    def _actualizar_listado_automaticamente(self):
+        ruta_script = Path(__file__).with_name("actualizar_listado.py")
+        try:
+            proceso = subprocess.run(
+                [sys.executable, str(ruta_script)],
+                cwd=str(ruta_script.parent),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            salida = (proceso.stdout or proceso.stderr).strip()
+            mensaje = "Listado actualizado automáticamente."
+            if proceso.returncode != 0:
+                mensaje = f"No se pudo actualizar el listado (código {proceso.returncode})."
+            if salida:
+                mensaje += f" {salida.splitlines()[-1]}"
+        except Exception as exc:
+            mensaje = f"Error al actualizar el listado automáticamente: {exc}"
+        self.after(0, lambda: self.log_msg(mensaje))
 
 
 def main():
