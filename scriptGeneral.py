@@ -19,7 +19,9 @@ OID_NOMBRES = "1.3.6.1.2.1.43.11.1.1.6.1"
 OID_MAX_CAP = "1.3.6.1.2.1.43.11.1.1.8.1"  
 OID_ACTUAL = "1.3.6.1.2.1.43.11.1.1.9.1"   
 OID_CONTADOR_TOTAL = "1.3.6.1.2.1.43.10.2.1.4.1.1"
-OID_NUMERO_SERIE = "1.3.6.1.2.1.43.5.1.1.17.1.1"
+OID_NUMERO_SERIE = "1.3.6.1.2.1.43.5.1.1.17.1"
+OID_RICOH_TONER_NEGRO = "1.3.6.1.4.1.367.3.2.1.2.24.1.1.5.1"
+OID_RICOH_NUMERO_SERIE = "1.3.6.1.4.1.367.3.2.1.2.1.4.0"
 
 
 def extraer_numero_serie_html(html):
@@ -34,6 +36,23 @@ def extraer_numero_serie_html(html):
 def extraer_numero_serie_sysdescr(sysdescr):
     match = re.search(r"\bS/?N\s*[:#]?\s*([^;,\s]+)", sysdescr, flags=re.IGNORECASE)
     return match.group(1).strip() if match else None
+
+
+def normalizar_valor_snmp_texto(valor):
+    if valor is None:
+        return None
+
+    texto = str(valor).strip()
+    if texto.startswith("b'") and texto.endswith("'"):
+        texto = texto[2:-1]
+    elif texto.startswith('b"') and texto.endswith('"'):
+        texto = texto[2:-1]
+    elif texto.startswith("'") and texto.endswith("'"):
+        texto = texto[1:-1]
+    elif texto.startswith('"') and texto.endswith('"'):
+        texto = texto[1:-1]
+
+    return texto.strip().strip('"').strip("'")
 
 
 def normalizar_mac_snmp(valor):
@@ -80,6 +99,12 @@ async def consultar_numero_serie_snmp(ip, timeout=3, comunidad="public"):
         sysdescr = await consultar_snmp_get(
             snmp_engine, target, OID_SYS_DESCR, comunidad
         )
+        serial_snmp = await consultar_snmp_get(
+            snmp_engine, target, OID_NUMERO_SERIE, comunidad
+        )
+        serial_limpio = normalizar_valor_snmp_texto(serial_snmp)
+        if serial_limpio and serial_limpio != "Desconocido":
+            return serial_limpio
         return extraer_numero_serie_sysdescr(sysdescr)
     except Exception:
         return None
@@ -187,6 +212,7 @@ async def obtener_estado_toner(ip, timeout=3, comunidad="public"):
     numero_serie = await consultar_snmp_get(
         snmp_engine, target, OID_NUMERO_SERIE, comunidad
     )
+    numero_serie = normalizar_valor_snmp_texto(numero_serie)
     numero_serie_web = await consultar_numero_serie_web(ip, timeout)
     mac = await consultar_mac_snmp(ip, timeout, comunidad)
 
@@ -218,7 +244,7 @@ async def obtener_estado_toner(ip, timeout=3, comunidad="public"):
         "numero_serie": (
             numero_serie_web
             or extraer_numero_serie_sysdescr(sysdescr)
-            or (None if numero_serie == "Desconocido" else numero_serie)
+            or (None if not numero_serie or numero_serie == "Desconocido" else numero_serie)
         ),
         "online": True,
         "estado": "OK",
@@ -226,6 +252,78 @@ async def obtener_estado_toner(ip, timeout=3, comunidad="public"):
         "paginas": {"impresiones_totales": contador_total} if contador_total is not None else {},
         "error": None,
     }
+
+
+async def obtener_estado_ricoh(ip, timeout=3, comunidad="public"):
+    snmp_engine = SnmpEngine()
+
+    try:
+        target = await UdpTransportTarget.create(
+            (ip, 161), timeout=timeout, retries=1
+        )
+        sysdescr = await consultar_snmp_get(
+            snmp_engine, target, OID_SYS_DESCR, comunidad
+        )
+        toner_negro = await consultar_snmp_get(
+            snmp_engine, target, OID_RICOH_TONER_NEGRO, comunidad
+        )
+        contador_total = await consultar_snmp_get(
+            snmp_engine, target, OID_CONTADOR_TOTAL, comunidad
+        )
+        numero_serie = await consultar_snmp_get(
+            snmp_engine, target, OID_RICOH_NUMERO_SERIE, comunidad
+        )
+        mac = await consultar_mac_snmp(ip, timeout, comunidad)
+
+        try:
+            toner_negro = int(toner_negro)
+        except (TypeError, ValueError):
+            toner_negro = None
+
+        try:
+            contador_total = int(contador_total)
+        except (TypeError, ValueError):
+            contador_total = None
+
+        modelo = None if sysdescr == "Desconocido" else " ".join(sysdescr.split())
+        numero_serie = None if numero_serie == "Desconocido" else numero_serie.strip()
+
+        if toner_negro is not None and toner_negro >= 0:
+            toners = {"Black": toner_negro}
+        else:
+            toners = {}
+
+        return {
+            "ip": ip,
+            "marca": "Ricoh",
+            "mac": mac,
+            "modelo": modelo,
+            "numero_serie": numero_serie,
+            "online": True,
+            "estado": "OK",
+            "toner": toners,
+            "paginas": (
+                {"impresiones_totales": contador_total}
+                if contador_total is not None
+                else {}
+            ),
+            "error": None,
+        }
+    except Exception as e:
+        return {
+            "ip": ip,
+            "marca": "Ricoh",
+            "mac": None,
+            "modelo": None,
+            "numero_serie": None,
+            "online": False,
+            "estado": None,
+            "toner": {},
+            "paginas": {},
+            "error": f"No responde por SNMP: {e}",
+        }
+    finally:
+        snmp_engine.close_dispatcher()
 
 
 async def main():

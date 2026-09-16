@@ -1,0 +1,184 @@
+[
+  {
+    "ip": "192.168.0.101",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:3B:83",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00009K",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 49
+    },
+    "paginas": {
+      "impresiones_totales": 155302
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.28",
+    "marca": "Samsung",
+    "mac": "00:15:99:A8:A3:FE",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THB8GC6F003HR",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 70
+    },
+    "paginas": {
+      "impresiones_totales": 186087
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.30",
+    "marca": "HP",
+    "mac": "44:1E:A1:0C:C0:5D",
+    "modelo": "HP LaserJet CP1525nw",
+    "numero_serie": "BRBFCCKX0K",
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "Black Cartridge HP CB540A": 45.0
+    },
+    "paginas": {
+      "impresiones_totales": 49181
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.32",
+    "marca": "Samsung",
+    "mac": "00:15:99:8D:02:A1",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBADB800079R",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 26
+    },
+    "paginas": {
+      "impresiones_totales": 34254
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.35",
+    "marca": "Ricoh",
+    "mac": "58:38:79:19:20:EA",
+    "modelo": "RICOH SP 3710SF V1.03 / RICOH Network Printer C model / RICOH Network Scanner C model / RICOH Network Facsimile C model",
+    "numero_serie": "5178ZB30564",
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "Black": 50
+    },
+    "paginas": {
+      "impresiones_totales": 84434
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.59",
+    "marca": "HP",
+    "mac": "00:23:7D:81:A3:ED",
+    "modelo": "HP LaserJet 5200",
+    "numero_serie": null,
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "1": 100.0
+    },
+    "paginas": {
+      "impresiones_totales": 12400
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.70",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:38:3E",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00113N",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 50
+    },
+    "paginas": {
+      "impresiones_totales": 117138
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.71",
+    "marca": "HP",
+    "mac": "48:0F:CF:F9:41:7B",
+    "modelo": "HP LaserJet M402dn",
+    "numero_serie": "BRBSHCQ3PB",
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "Black Cartridge HP CF226X": 67.0
+    },
+    "paginas": {
+      "impresiones_totales": 12677
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.80",
+    "marca": "Samsung",
+    "mac": "00:15:99:A8:A3:C3",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THB8GC6F001EM",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 38
+    },
+    "paginas": {
+      "impresiones_totales": 113548
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.81",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:3B:85",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00004W",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 59
+    },
+    "paginas": {
+      "impresiones_totales": 203079
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.46",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:37:AA",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00050W",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 68
+    },
+    "paginas": {
+      "impresiones_totales": 154546
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.47",
+    "marca": "Samsung",
+    "online": false,
+    "error": "Timeout (8s) sin respuesta."
+  }
+]

@@ -3,11 +3,29 @@ Aquí se encuentra la validación de IPs, la limpieza de datos y la consulta as�
 para obtener modelo, estado, porcentaje de tóner y contadores de páginas. """ 
 
 import asyncio 
+import json
 import re 
+import subprocess
 from typing import Callable, Optional 
 import xml.etree.ElementTree as ET 
 
-from scriptGeneral import consultar_mac_snmp, consultar_numero_serie_snmp, obtener_estado_toner
+from scriptGeneral import (
+    consultar_mac_snmp,
+    consultar_numero_serie_snmp,
+    obtener_estado_ricoh,
+    obtener_estado_toner,
+)
+
+STANDARD_RESULT = {
+    "mac": None,
+    "modelo": None,
+    "numero_serie": None,
+    "online": True,
+    "estado": "OK",
+    "toner": {},
+    "paginas": {},
+    "error": None,
+}
 
 try: 
     import aiohttp 
@@ -122,8 +140,11 @@ def _extraer_numero_serie(printer: SyncThru) -> Optional[str]:
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 async def consultar_una_impresora(ip: str, timeout: int = 8, marca: str = "Samsung") -> dict:
-    """Consulta una impresora Samsung SyncThru coordinando sus subtareas.""" 
-    if marca != "Samsung":
+    """Consulta una impresora según su marca o mediante OIDs SNMP estándar.""" 
+    if marca == "Ricoh":
+        return await obtener_estado_ricoh(ip, timeout=timeout)
+
+    if marca in ("HP", "Otra"):
         resultado = await obtener_estado_toner(ip, timeout=timeout)
         resultado["marca"] = marca
         return resultado
@@ -181,10 +202,71 @@ async def consultar_una_impresora(ip: str, timeout: int = 8, marca: str = "Samsu
     return resultado 
 
 
+async def consultar_con_comando(
+    ip: str, marca: str, comando: str, salida: list[dict | str], timeout: int = 8
+) -> dict:
+    """Ejecuta un comando configurado por el usuario y normaliza su JSON."""
+    comando_ip = comando.replace("{ip}", ip)
+    try:
+        proceso = await asyncio.to_thread(
+            subprocess.run,
+            comando_ip,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        if proceso.returncode != 0:
+            raise RuntimeError((proceso.stderr or "comando terminó con error").strip())
+        datos = json.loads(proceso.stdout)
+        if not isinstance(datos, dict):
+            raise ValueError("la salida debe ser un objeto JSON")
+        faltantes = []
+        tipos_invalidos = []
+        for esperado in salida:
+            if isinstance(esperado, str):
+                clave, tipo = esperado, None
+            else:
+                clave, tipo = esperado.get("clave"), esperado.get("tipo")
+            if clave not in datos:
+                faltantes.append(clave)
+                continue
+            if tipo and not _tipo_json_coincide(datos[clave], tipo):
+                tipos_invalidos.append(f"{clave} (esperado {tipo})")
+        if faltantes:
+            raise ValueError(f"faltan claves declaradas: {', '.join(faltantes)}")
+        if tipos_invalidos:
+            raise ValueError(f"tipos inválidos: {', '.join(tipos_invalidos)}")
+        return {**STANDARD_RESULT, **datos, "ip": ip, "marca": marca, "error": None}
+    except subprocess.TimeoutExpired:
+        error = f"Timeout ({timeout}s) sin respuesta."
+    except (json.JSONDecodeError, ValueError) as exc:
+        error = f"Salida inválida del comando: {exc}"
+    except Exception as exc:
+        error = f"Error ejecutando comando: {exc}"
+    return {"ip": ip, "marca": marca, **STANDARD_RESULT, "online": False, "error": error}
+
+
+def _tipo_json_coincide(valor: object, tipo: str) -> bool:
+    """Comprueba un tipo declarado para un campo de salida JSON."""
+    tipos = {
+        "string": lambda dato: isinstance(dato, str),
+        "integer": lambda dato: isinstance(dato, int) and not isinstance(dato, bool),
+        "number": lambda dato: isinstance(dato, (int, float)) and not isinstance(dato, bool),
+        "boolean": lambda dato: isinstance(dato, bool),
+        "object": lambda dato: isinstance(dato, dict),
+        "array": lambda dato: isinstance(dato, list),
+        "null": lambda dato: dato is None,
+    }
+    return tipo in tipos and tipos[tipo](valor)
+
+
 async def consultar_todas( 
     ips: list[str | dict],
     timeout: int, 
-    progreso_callback: Optional[Callable[[int, int, str, Optional[dict]], None]] = None 
+    progreso_callback: Optional[Callable[[int, int, str, Optional[dict]], None]] = None,
+    comandos: Optional[dict[str, dict]] = None,
 ) -> list[dict]: 
     resultados = [] 
     for i, item in enumerate(ips, start=1):
@@ -192,7 +274,33 @@ async def consultar_todas(
         marca = item.get("marca", "Samsung") if isinstance(item, dict) else "Samsung"
         if progreso_callback: 
             progreso_callback(i, len(ips), ip, None) 
-        data = await consultar_una_impresora(ip, timeout=timeout, marca=marca)
+        try:
+            configuracion = (comandos or {}).get(marca)
+            consulta = (
+                consultar_con_comando(
+                    ip, marca, configuracion["comando"], configuracion["salida"], timeout
+                )
+                if configuracion
+                else consultar_una_impresora(ip, timeout=timeout, marca=marca)
+            )
+            data = await asyncio.wait_for(
+                consulta,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            data = {
+                "ip": ip,
+                "marca": marca,
+                "online": False,
+                "error": f"Timeout ({timeout}s) sin respuesta.",
+            }
+        except Exception as e:
+            data = {
+                "ip": ip,
+                "marca": marca,
+                "online": False,
+                "error": f"Error durante la consulta: {e}",
+            }
         resultados.append(data) 
         if progreso_callback: 
             progreso_callback(i, len(ips), ip, data) 

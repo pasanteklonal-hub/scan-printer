@@ -17,9 +17,11 @@ from openpyxl.styles import (
 )
 from openpyxl.utils import get_column_letter
 
+from app_paths import APP_DIR, resource_path
 
-BASE_DIR = Path(__file__).resolve().parent
-ARCHIVO_BASE = BASE_DIR / "impresoras.xlsx"
+
+BASE_DIR = APP_DIR
+ARCHIVO_BASE = resource_path("impresoras.xlsx")
 ARCHIVO_SALIDA = BASE_DIR / "impresoras_al_dia.xlsx"
 CARPETA_JSON = BASE_DIR / "estado-impresoras"
 
@@ -350,13 +352,20 @@ def exportar_pdf_libreoffice():
     wb.save(temporal)
     wb.close()
 
-    # Ruta de LibreOffice
-    soffice = r"C:\Program Files\LibreOffice\program\soffice.exe"
+    # Ruta de LibreOffice (soporta Linux, macOS y Windows)
+    rutas = [
+        shutil.which("soffice"),
+        shutil.which("libreoffice"),
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    ]
 
-    if not os.path.exists(soffice):
+    soffice = next((ruta for ruta in rutas if ruta and os.path.exists(ruta)), None)
+
+    if soffice is None:
         raise FileNotFoundError(
-            "No se encontró LibreOffice.\n"
-            "Modificá la ruta de 'soffice.exe'."
+            "No se encontró LibreOffice en PATH ni en la ruta por defecto.\n"
+            "Instalá LibreOffice o configurá el ejecutable 'soffice'."
         )
 
     subprocess.run(
@@ -372,16 +381,15 @@ def exportar_pdf_libreoffice():
         check=True,
     )
 
-    os.remove(temporal)
+    if temporal.exists():
+        os.remove(temporal)
 
-    # Renombrar el PDF
+    # Renombrar el PDF sobrescribiendo cualquier archivo previo
     pdf_temporal = BASE_DIR / "__tmp_impresoras.pdf"
     pdf_salida = BASE_DIR / "impresoras_al_dia.pdf"
     if pdf_temporal.exists():
-
         if pdf_salida.exists():
             pdf_salida.unlink()
-
         pdf_temporal.rename(pdf_salida)
 
     print("✔ PDF generado correctamente.")

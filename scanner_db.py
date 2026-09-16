@@ -9,9 +9,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
+from app_paths import APP_DIR
 
-DEFAULT_DB_PATH = Path(__file__).with_name("estado-impresoras") / "scanner.db"
-LEGACY_DB_PATH = Path(__file__).with_name("scanner.db")
+
+DEFAULT_DB_PATH = APP_DIR / "estado-impresoras" / "scanner.db"
+LEGACY_DB_PATH = APP_DIR / "scanner.db"
+COMMANDS_PATH = APP_DIR / "estado-impresoras" / "comandos_impresoras.json"
 
 
 def sanitize_for_json(value: Any) -> Any:
@@ -115,6 +118,25 @@ def load_printers(db_path: Optional[Path | str] = None) -> list[dict]:
     finally:
         conn.close()
     return [{"ip": row[0], "marca": row[1]} for row in rows]
+
+
+def load_printer_commands(commands_path: Optional[Path | str] = None) -> list[dict]:
+    path = Path(commands_path or COMMANDS_PATH)
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            payload = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return []
+    return payload if isinstance(payload, list) else []
+
+
+def save_printer_commands(commands: list[dict], commands_path: Optional[Path | str] = None) -> None:
+    path = Path(commands_path or COMMANDS_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(sanitize_for_json(commands), file, indent=2, ensure_ascii=False)
 
 
 def save_scan_results(results: list[dict], db_path: Optional[Path | str] = None) -> None:
