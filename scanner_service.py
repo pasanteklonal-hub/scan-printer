@@ -26,6 +26,10 @@ STANDARD_RESULT = {
     "paginas": {},
     "error": None,
 }
+COMMAND_OUTPUT_SCHEMA = (
+    {"clave": "toner", "tipo": "object"},
+    {"clave": "paginas", "tipo": "object"},
+)
 
 try: 
     import aiohttp 
@@ -203,7 +207,12 @@ async def consultar_una_impresora(ip: str, timeout: int = 8, marca: str = "Samsu
 
 
 async def consultar_con_comando(
-    ip: str, marca: str, comando: str, salida: list[dict | str], timeout: int = 8
+    ip: str,
+    marca: str,
+    comando: str,
+    salida: list[dict | str],
+    timeout: int = 8,
+    modelo: Optional[str] = None,
 ) -> dict:
     """Ejecuta un comando configurado por el usuario y normaliza su JSON."""
     comando_ip = comando.replace("{ip}", ip)
@@ -238,7 +247,14 @@ async def consultar_con_comando(
             raise ValueError(f"faltan claves declaradas: {', '.join(faltantes)}")
         if tipos_invalidos:
             raise ValueError(f"tipos inválidos: {', '.join(tipos_invalidos)}")
-        return {**STANDARD_RESULT, **datos, "ip": ip, "marca": marca, "error": None}
+        return {
+            **STANDARD_RESULT,
+            **datos,
+            "ip": ip,
+            "marca": marca,
+            "modelo": modelo or datos.get("modelo"),
+            "error": None,
+        }
     except subprocess.TimeoutExpired:
         error = f"Timeout ({timeout}s) sin respuesta."
     except (json.JSONDecodeError, ValueError) as exc:
@@ -278,7 +294,12 @@ async def consultar_todas(
             configuracion = (comandos or {}).get(marca)
             consulta = (
                 consultar_con_comando(
-                    ip, marca, configuracion["comando"], configuracion["salida"], timeout
+                    ip,
+                    marca,
+                    configuracion["comando"],
+                    configuracion["salida"],
+                    timeout,
+                    modelo=configuracion.get("modelo"),
                 )
                 if configuracion
                 else consultar_una_impresora(ip, timeout=timeout, marca=marca)
@@ -341,7 +362,6 @@ async def consultar_hp_xml(ip: str, timeout: int = 5) -> dict | None:
         return {"toner": toners, "paginas": {}}
     except Exception:
         return None
-
 
 
 

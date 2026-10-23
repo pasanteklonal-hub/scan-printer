@@ -16,16 +16,24 @@ from tkinter import filedialog, messagebox, ttk
 
 from scanner_db import (
     load_last_results,
+    load_area_options,
     load_printer_commands,
     load_printers,
     save_ips,
+    save_area_options,
     save_printer_commands,
     save_scan_results,
     sanitize_for_json,
 )
 from app_paths import APP_DIR
 import actualizar_listado
-from scanner_service import IP_REGEX, consultar_todas, limpiar_ip
+from scanner_service import (
+    COMMAND_OUTPUT_SCHEMA,
+    IP_REGEX,
+    consultar_con_comando,
+    consultar_todas,
+    limpiar_ip,
+)
 from prediccion_toners import (
     cargar_historial,
     cargar_areas,
@@ -52,6 +60,9 @@ class ScannerApp(tk.Tk):
         self.ips: list[dict] = []
         self.resultados_finales: list[dict] = []
         self.comandos: list[dict] = []
+        self.areas = load_area_options()
+        self._comando_probado: tuple[str, str, str, str] | None = None
+        self._prueba_comando_en_curso = False
 
         self._construir_ui()
         self._cargar_estado_guardado()
@@ -123,13 +134,16 @@ class ScannerApp(tk.Tk):
         pestaña_comandos = ttk.Frame(pestañas)
         pestaña_ver = ttk.Frame(pestañas)
         pestaña_toners = ttk.Frame(pestañas)
+        pestaña_areas = ttk.Frame(pestañas)
         pestañas.add(pestaña_escaneo, text="Escanear impresoras")
         pestañas.add(pestaña_comandos, text="Agregar comando")
         pestañas.add(pestaña_ver, text="Ver")
         pestañas.add(pestaña_toners, text="Toners")
+        pestañas.add(pestaña_areas, text="Áreas")
         self._construir_pestaña_comandos(pestaña_comandos)
         self._construir_pestaña_ver(pestaña_ver)
         self._construir_pestaña_toners(pestaña_toners)
+        self._construir_pestaña_areas(pestaña_areas)
 
         contenido = ttk.Frame(pestaña_escaneo)
         contenido.pack(fill="both", expand=True)
@@ -155,7 +169,14 @@ class ScannerApp(tk.Tk):
         self.combo_marca.set("Samsung")
         self.combo_marca.pack(side="left", padx=(4, 8))
 
+        ttk.Label(frame_ip, text="Área:").pack(side="left")
+        self.combo_area = ttk.Combobox(
+            frame_ip, values=tuple(self.areas), state="readonly", width=18
+        )
+        self.combo_area.pack(side="left", padx=(4, 8))
+
         ttk.Button(frame_ip, text="Agregar IP", command=self.agregar_ip, style="Accent.TButton").pack(side="left", padx=2)
+        ttk.Button(frame_ip, text="Asignar área", command=self.asignar_area_seleccionada).pack(side="left", padx=2)
         ttk.Button(frame_ip, text="Quitar seleccionada", command=self.quitar_ip).pack(side="left", padx=2)
         ttk.Button(frame_ip, text="Limpiar listado", command=self.limpiar_listado).pack(side="left", padx=2)
 
@@ -195,28 +216,132 @@ class ScannerApp(tk.Tk):
         self.log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def _construir_pestaña_comandos(self, parent):
-        ttk.Label(parent, text="Marca nueva:").grid(row=0, column=0, sticky="w", padx=10, pady=(15, 4))
-        self.entry_comando_marca = ttk.Entry(parent, width=40)
-        self.entry_comando_marca.grid(row=0, column=1, sticky="ew", padx=10, pady=(15, 4))
-        ttk.Label(parent, text="Script/comando:").grid(row=1, column=0, sticky="w", padx=10, pady=4)
-        self.entry_comando = ttk.Entry(parent)
-        self.entry_comando.grid(row=1, column=1, sticky="ew", padx=10, pady=4)
-        ttk.Label(parent, text="Salida esperada:").grid(row=2, column=0, sticky="w", padx=10, pady=4)
-        self.entry_salida = ttk.Entry(parent)
-        self.entry_salida.insert(0, "modelo:string,numero_serie:string,mac:string,toner:object,paginas:object,estado:string")
-        self.entry_salida.grid(row=2, column=1, sticky="ew", padx=10, pady=4)
-        ttk.Label(
-            parent,
-            text="Use {ip} y declare campo:tipo separados por coma, en el orden esperado. Tipos: string, integer, number, boolean, object, array, null. Ejemplo JSON: {\"modelo\":\"X\",\"toner\":{\"Black\":80}}",
-            wraplength=600,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=8)
-        ttk.Button(parent, text="Guardar comando", command=self.guardar_comando, style="Accent.TButton").grid(
-            row=4, column=1, sticky="e", padx=10, pady=8
+        parent.columnconfigure(0, weight=1)
+        parent.columnconfigure(1, weight=2)
+        parent.rowconfigure(0, weight=1)
+
+        datos = ttk.LabelFrame(parent, text="Datos de la impresora")
+        datos.grid(row=0, column=0, sticky="new", padx=(12, 6), pady=(12, 8))
+        datos.columnconfigure(0, weight=1)
+        ttk.Label(datos, text="Marca:").grid(row=0, column=0, sticky="w", padx=8, pady=6)
+        self.entry_comando_marca = ttk.Entry(datos)
+        self.entry_comando_marca.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(datos, text="Modelo:").grid(row=2, column=0, sticky="w", padx=8, pady=6)
+        self.entry_comando_modelo = ttk.Entry(datos)
+        self.entry_comando_modelo.grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(datos, text="IP para probar:").grid(row=4, column=0, sticky="w", padx=8, pady=6)
+        self.entry_comando_ip = ttk.Entry(datos)
+        self.entry_comando_ip.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 8))
+
+        ttk.Label(datos, text="La prueba ejecuta el comando contra esta IP.").grid(
+            row=6, column=0, sticky="w", padx=8, pady=(8, 6)
         )
-        self.lista_comandos = tk.Listbox(parent, height=12)
-        self.lista_comandos.grid(row=5, column=0, columnspan=2, sticky="nsew", padx=10, pady=8)
-        parent.columnconfigure(1, weight=1)
-        parent.rowconfigure(5, weight=1)
+
+        panel_derecho = ttk.Frame(parent)
+        panel_derecho.grid(row=0, column=1, sticky="nsew", padx=(6, 12), pady=(12, 8))
+        panel_derecho.columnconfigure(0, weight=1)
+        panel_derecho.rowconfigure(0, weight=1)
+        panel_derecho.rowconfigure(1, weight=1)
+
+        pestañas_comando = ttk.Notebook(panel_derecho)
+        pestañas_comando.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
+        pestaña_script = ttk.Frame(pestañas_comando)
+        pestaña_ejemplo = ttk.Frame(pestañas_comando)
+        pestañas_comando.add(pestaña_script, text="Script o comando")
+        pestañas_comando.add(pestaña_ejemplo, text="Ejemplo de comando válido")
+
+        pestaña_script.columnconfigure(0, weight=1)
+        pestaña_script.rowconfigure(0, weight=1)
+        self.texto_comando = tk.Text(pestaña_script, height=5, wrap="word")
+        self.texto_comando.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        ttk.Label(
+            pestaña_script,
+            text='Incluí {ip} donde debe ir la dirección. El comando debe imprimir un objeto JSON con "toner" y "paginas", ambos objetos.',
+            wraplength=600,
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+
+        pestaña_ejemplo.columnconfigure(0, weight=1)
+        pestaña_ejemplo.rowconfigure(0, weight=1)
+        ejemplo_comando = r"""actual=$(snmpwalk -v2c -c public {ip} 1.3.6.1.2.1.43.11.1.1.9 | sed -n 's/.*INTEGER: \([0-9][0-9]*\).*/\1/p' | head -n1); maximo=$(snmpwalk -v2c -c public {ip} 1.3.6.1.2.1.43.11.1.1.8 | sed -n 's/.*INTEGER: \([0-9][0-9]*\).*/\1/p' | head -n1); mac=$(snmpwalk -v2c -c public {ip} 1.3.6.1.2.1.2.2.1.6 | awk '/\.1 = Hex-STRING:/ {for(i=4;i<=NF;i++) printf "%s%s",(i==4?"":":"),$i; exit}'); sn=$(snmpwalk -v2c -c public {ip} 1.3.6.1.2.1.43.5.1.1.17 | sed -n 's/.*STRING: "\(.*\)"/\1/p' | head -n1); [ -n "$actual" ] && [ -n "$maximo" ] && [ "$maximo" -gt 0 ] || exit 1; porcentaje=$(awk -v actual="$actual" -v maximo="$maximo" 'BEGIN { printf "%.0f", actual * 100 / maximo }'); printf '{"toner":{"Black":%s},"paginas":{},"mac":"%s","numero_serie":"%s"}' "$porcentaje" "$mac" "$sn""" + '"'
+        texto_ejemplo = tk.Text(
+            pestaña_ejemplo, height=5, wrap="word", state="normal"
+        )
+        texto_ejemplo.insert("1.0", ejemplo_comando)
+        texto_ejemplo.config(state="disabled")
+        texto_ejemplo.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=8)
+        scrollbar_ejemplo = ttk.Scrollbar(
+            pestaña_ejemplo, orient="vertical", command=texto_ejemplo.yview
+        )
+        scrollbar_ejemplo.grid(row=0, column=1, sticky="ns", padx=(0, 8), pady=8)
+        texto_ejemplo.configure(yscrollcommand=scrollbar_ejemplo.set)
+        pie_ejemplo = ttk.Frame(pestaña_ejemplo)
+        pie_ejemplo.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        pie_ejemplo.columnconfigure(0, weight=1)
+        self.label_ayuda_ejemplo = ttk.Label(
+            pie_ejemplo,
+            text="Puedes pedirle a una IA que genere un script como este para tu marca y modelo particular.",
+            wraplength=500,
+            justify="left",
+        )
+        self.label_ayuda_ejemplo.grid(row=0, column=0, sticky="ew")
+        ttk.Button(
+            pie_ejemplo,
+            text="Copiar ejemplo",
+            command=lambda: self._copiar_ejemplo_comando(ejemplo_comando),
+        ).grid(row=0, column=1, padx=(8, 0))
+
+        marco_resultado = ttk.LabelFrame(panel_derecho, text="Resultado de la prueba")
+        marco_resultado.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+        marco_resultado.columnconfigure(0, weight=1)
+        marco_resultado.rowconfigure(0, weight=1)
+        self.resultado_prueba = tk.Text(
+            marco_resultado, height=5, state="disabled", wrap="word", bg="#ffffff"
+        )
+        self.resultado_prueba.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=8)
+        scrollbar_resultado = ttk.Scrollbar(
+            marco_resultado, orient="vertical", command=self.resultado_prueba.yview
+        )
+        scrollbar_resultado.grid(row=0, column=1, sticky="ns", padx=(0, 8), pady=8)
+        self.resultado_prueba.configure(yscrollcommand=scrollbar_resultado.set)
+
+        acciones = ttk.Frame(parent)
+        acciones.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=4)
+        self.btn_probar_comando = ttk.Button(
+            acciones, text="Probar comando", command=self.probar_comando
+        )
+        self.btn_probar_comando.pack(side="left")
+        self.btn_guardar_comando = ttk.Button(
+            acciones,
+            text="Guardar marca y modelo",
+            command=self.guardar_comando,
+            style="Accent.TButton",
+            state="disabled",
+        )
+        self.btn_guardar_comando.pack(side="left", padx=8)
+        self.label_estado_prueba = ttk.Label(acciones, text="Pendiente de prueba.")
+        self.label_estado_prueba.pack(side="left", padx=8)
+
+        ttk.Label(parent, text="Marcas y comandos guardados:").grid(
+            row=2, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 2)
+        )
+        self.lista_comandos = tk.Listbox(parent, height=4)
+        self.lista_comandos.grid(
+            row=3, column=0, columnspan=2, sticky="ew", padx=12, pady=(2, 12)
+        )
+
+        for campo in (
+            self.entry_comando_marca,
+            self.entry_comando_modelo,
+            self.entry_comando_ip,
+        ):
+            campo.bind("<KeyRelease>", self._invalidar_prueba_comando)
+        self.texto_comando.bind("<KeyRelease>", self._invalidar_prueba_comando)
+
+    def _copiar_ejemplo_comando(self, comando: str):
+        self.clipboard_clear()
+        self.clipboard_append(comando)
+        self.label_ayuda_ejemplo.config(text="Ejemplo copiado. Pegalo en la pestaña Script o comando.")
 
     def _construir_pestaña_ver(self, parent):
         parent.columnconfigure(0, weight=1)
@@ -275,6 +400,22 @@ class ScannerApp(tk.Tk):
             yscrollcommand=scrollbar_vertical.set,
         )
 
+    def _construir_pestaña_areas(self, parent):
+        parent.columnconfigure(0, weight=1)
+        ttk.Label(parent, text="Áreas disponibles").grid(
+            row=0, column=0, sticky="w", padx=10, pady=(18, 8)
+        )
+        self.lista_areas = tk.Listbox(parent, height=14, exportselection=False)
+        self.lista_areas.grid(row=1, column=0, sticky="nsew", padx=10, pady=4)
+        parent.rowconfigure(1, weight=1)
+        controles = ttk.Frame(parent)
+        controles.grid(row=2, column=0, sticky="ew", padx=10, pady=8)
+        self.entry_area = ttk.Entry(controles)
+        self.entry_area.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(controles, text="Agregar área", command=self.agregar_area).pack(side="left", padx=2)
+        ttk.Button(controles, text="Quitar área", command=self.quitar_area).pack(side="left", padx=2)
+        self._mostrar_areas()
+
     @staticmethod
     def _abrir_archivo_generado(nombre: str, descripcion: str):
         ruta = Path(__file__).with_name(nombre)
@@ -329,34 +470,149 @@ class ScannerApp(tk.Tk):
                 "No hay impresoras con datos de tóner disponibles para calcular.",
             )
 
-    def guardar_comando(self):
+    def _datos_formulario_comando(self) -> tuple[str, str, str, str]:
         marca = self.entry_comando_marca.get().strip()
-        comando = self.entry_comando.get().strip()
-        salida = []
-        salida_invalida = False
-        for elemento in self.entry_salida.get().split(","):
-            elemento = elemento.strip()
-            if not elemento:
-                continue
-            partes = [parte.strip() for parte in elemento.split(":", 1)]
-            if len(partes) != 2 or not partes[0] or not partes[1]:
-                salida_invalida = True
-                break
-            salida.append({"clave": partes[0], "tipo": partes[1].lower()})
-        tipos_validos = {"string", "integer", "number", "boolean", "object", "array", "null"}
-        if salida_invalida or any(item["tipo"] not in tipos_validos for item in salida):
-            messagebox.showwarning("Salida inválida", "Use el formato campo:tipo y tipos JSON válidos.")
+        modelo = self.entry_comando_modelo.get().strip()
+        ip = limpiar_ip(self.entry_comando_ip.get())
+        comando = self.texto_comando.get("1.0", "end").strip()
+        return marca, modelo, ip, comando
+
+    def _invalidar_prueba_comando(self, _event=None):
+        self._comando_probado = None
+        self.btn_guardar_comando.config(state="disabled")
+        self.label_estado_prueba.config(text="Pendiente de prueba.")
+        self.resultado_prueba.config(state="normal")
+        self.resultado_prueba.delete("1.0", "end")
+        self.resultado_prueba.config(state="disabled")
+
+    def probar_comando(self):
+        marca, modelo, ip, comando = self._datos_formulario_comando()
+        if not marca or not modelo or not comando or not ip:
+            messagebox.showwarning(
+                "Datos incompletos",
+                "Completá la marca, el modelo, una IP de prueba y el comando.",
+            )
             return
-        if not marca or not comando or not salida or "{ip}" not in comando:
-            messagebox.showwarning("Datos incompletos", "Indique marca, comando con {ip} y al menos una salida campo:tipo.")
+        if not IP_REGEX.fullmatch(ip):
+            messagebox.showwarning("IP inválida", f"'{ip}' no es una dirección IP válida.")
             return
+        if "{ip}" not in comando:
+            messagebox.showwarning(
+                "Falta la IP en el comando",
+                "Incluí {ip} en el comando para indicar dónde se reemplaza por la IP de prueba.",
+            )
+            return
+        try:
+            timeout = int(self.spin_timeout.get())
+        except ValueError:
+            messagebox.showwarning("Timeout inválido", "Indicá un timeout entre 2 y 60 segundos.")
+            return
+        if not 2 <= timeout <= 60:
+            messagebox.showwarning("Timeout inválido", "Indicá un timeout entre 2 y 60 segundos.")
+            return
+
+        self._comando_probado = None
+        self._prueba_comando_en_curso = True
+        self.btn_guardar_comando.config(state="disabled")
+        self.btn_probar_comando.config(state="disabled", text="Probando...")
+        self.label_estado_prueba.config(text="Ejecutando comando...")
+        self.resultado_prueba.config(state="normal")
+        self.resultado_prueba.delete("1.0", "end")
+        self.resultado_prueba.config(state="disabled")
+        self._configurar_campos_comando("disabled")
+        threading.Thread(
+            target=self._ejecutar_prueba_comando,
+            args=((marca, modelo, ip, comando), timeout),
+            daemon=True,
+        ).start()
+
+    def _configurar_campos_comando(self, estado: str):
+        for campo in (
+            self.entry_comando_marca,
+            self.entry_comando_modelo,
+            self.entry_comando_ip,
+            self.texto_comando,
+        ):
+            campo.config(state=estado)
+
+    def _ejecutar_prueba_comando(
+        self, datos_formulario: tuple[str, str, str, str], timeout: int
+    ):
+        marca, modelo, ip, comando = datos_formulario
+        try:
+            resultado = asyncio.run(
+                consultar_con_comando(
+                    ip,
+                    marca,
+                    comando,
+                    [dict(campo) for campo in COMMAND_OUTPUT_SCHEMA],
+                    timeout=timeout,
+                    modelo=modelo,
+                )
+            )
+        except Exception as exc:
+            resultado = {"error": f"No se pudo probar el comando: {exc}"}
+        self.after(
+            0,
+            lambda: self._finalizar_prueba_comando(datos_formulario, resultado),
+        )
+
+    def _finalizar_prueba_comando(self, datos_formulario: tuple[str, str, str, str], resultado: dict):
+        self._prueba_comando_en_curso = False
+        self._configurar_campos_comando("normal")
+        self.btn_probar_comando.config(state="normal", text="Probar comando")
+        self.resultado_prueba.config(state="normal")
+        self.resultado_prueba.delete("1.0", "end")
+        self.resultado_prueba.insert(
+            "end", json.dumps(resultado, indent=2, ensure_ascii=False)
+        )
+        self.resultado_prueba.config(state="disabled")
+        if resultado.get("error"):
+            self._comando_probado = None
+            self.btn_guardar_comando.config(state="disabled")
+            self.label_estado_prueba.config(
+                text=f"La prueba falló: {resultado['error']}"
+            )
+            return
+
+        self._comando_probado = datos_formulario
+        self.btn_guardar_comando.config(state="normal")
+        self.label_estado_prueba.config(
+            text="Prueba correcta. El resultado tiene la estructura requerida."
+        )
+
+    def guardar_comando(self):
+        datos_formulario = self._datos_formulario_comando()
+        if self._prueba_comando_en_curso or self._comando_probado != datos_formulario:
+            messagebox.showwarning(
+                "Comando sin probar",
+                "Probá el comando con estos mismos datos antes de guardarlo.",
+            )
+            return
+
+        marca, modelo, _ip, comando = datos_formulario
+        salida = [dict(campo) for campo in COMMAND_OUTPUT_SCHEMA]
         self.comandos = [item for item in self.comandos if item.get("marca") != marca]
-        self.comandos.append({"marca": marca, "comando": comando, "salida": salida})
+        self.comandos.append(
+            {
+                "marca": marca,
+                "modelo": modelo,
+                "comando": comando,
+                "salida": salida,
+            }
+        )
         save_printer_commands(self.comandos)
         self._actualizar_marcas()
         self._mostrar_comandos()
         self.entry_comando_marca.delete(0, "end")
-        messagebox.showinfo("Comando guardado", f"La marca '{marca}' ya está disponible en el listado.")
+        self.entry_comando_modelo.delete(0, "end")
+        self.entry_comando_ip.delete(0, "end")
+        self.texto_comando.delete("1.0", "end")
+        self._invalidar_prueba_comando()
+        messagebox.showinfo(
+            "Comando guardado",
+            f"El comando para {marca} {modelo} ya está disponible en el listado.",
+        )
 
     def _actualizar_marcas(self):
         marcas = ["Samsung", "HP", "Ricoh", "Otra"] + [item["marca"] for item in self.comandos]
@@ -365,11 +621,10 @@ class ScannerApp(tk.Tk):
     def _mostrar_comandos(self):
         self.lista_comandos.delete(0, "end")
         for item in self.comandos:
-            salida = ", ".join(
-                f"{dato['clave']}:{dato['tipo']}" if isinstance(dato, dict) else dato
-                for dato in item["salida"]
+            modelo = f" {item['modelo']}" if item.get("modelo") else ""
+            self.lista_comandos.insert(
+                "end", f"{item['marca']}{modelo}: {item['comando']}"
             )
-            self.lista_comandos.insert("end", f"{item['marca']}: {item['comando']} -> {salida}")
 
     def _cargar_estado_guardado(self):
         self.comandos = load_printer_commands()
@@ -377,7 +632,17 @@ class ScannerApp(tk.Tk):
         self._mostrar_comandos()
         impresoras_guardadas = load_printers()
         if impresoras_guardadas:
+            for impresora in impresoras_guardadas:
+                if not impresora.get("area"):
+                    impresora["area"] = actualizar_listado.obtener_area_impresora(impresora["ip"])
+            areas_anteriores = self.areas.copy()
+            self.areas = list(dict.fromkeys(self.areas + sorted(actualizar_listado.areas_en_uso())))
+            if self.areas != areas_anteriores:
+                save_area_options(self.areas)
+            self.combo_area["values"] = tuple(self.areas)
+            self._mostrar_areas()
             self.ips = impresoras_guardadas
+            save_ips(self.ips)
             for impresora in impresoras_guardadas:
                 self.listbox.insert("end", self._texto_impresora(impresora))
 
@@ -388,7 +653,82 @@ class ScannerApp(tk.Tk):
 
     @staticmethod
     def _texto_impresora(impresora: dict) -> str:
-        return f"{impresora['ip']}  [{impresora.get('marca', 'Samsung')}]"
+        area = f" - {impresora['area']}" if impresora.get("area") else ""
+        return f"{impresora['ip']}  [{impresora.get('marca', 'Samsung')}]{area}"
+
+    def _mostrar_areas(self):
+        self.lista_areas.delete(0, "end")
+        for area in self.areas:
+            self.lista_areas.insert("end", area)
+
+    def agregar_area(self):
+        area = self.entry_area.get().strip().upper()
+        if not area:
+            return
+        if area.casefold() in {existente.casefold() for existente in self.areas}:
+            messagebox.showinfo("Área existente", f"El área {area} ya está configurada.")
+            return
+        self.areas.append(area)
+        save_area_options(self.areas)
+        self.combo_area["values"] = tuple(self.areas)
+        self.combo_area.set(area)
+        self.entry_area.delete(0, "end")
+        self._mostrar_areas()
+
+    def quitar_area(self):
+        seleccion = self.lista_areas.curselection()
+        if not seleccion:
+            return
+        area = self.areas[seleccion[0]]
+        areas_asignadas = actualizar_listado.areas_en_uso() | {
+            impresora.get("area", "") for impresora in self.ips
+        }
+        if area in areas_asignadas:
+            messagebox.showwarning(
+                "Área en uso",
+                f"No se puede quitar {area} mientras haya impresoras asignadas.",
+            )
+            return
+        self.areas.remove(area)
+        save_area_options(self.areas)
+        self.combo_area["values"] = tuple(self.areas)
+        if self.combo_area.get() == area:
+            self.combo_area.set("")
+        self._mostrar_areas()
+
+    def asignar_area_seleccionada(self):
+        seleccion = self.listbox.curselection()
+        area = self.combo_area.get().strip()
+        if not seleccion:
+            messagebox.showwarning("Sin impresoras", "Seleccioná una o más IPs del listado.")
+            return
+        if area not in self.areas:
+            messagebox.showwarning("Área requerida", "Seleccioná un área configurada.")
+            return
+        try:
+            for indice in seleccion:
+                impresora = self.ips[indice]
+                actualizar_listado.establecer_area_impresora(
+                    impresora["ip"], impresora.get("marca", "Samsung"), area
+                )
+                impresora["area"] = area
+            save_ips(self.ips)
+            self._actualizar_lista_ips()
+            self._actualizar_archivos()
+        except Exception as exc:
+            messagebox.showerror("No se pudo asignar el área", str(exc))
+
+    def _actualizar_lista_ips(self):
+        self.listbox.delete(0, "end")
+        for impresora in self.ips:
+            self.listbox.insert("end", self._texto_impresora(impresora))
+
+    def _actualizar_archivos(self):
+        try:
+            actualizar_listado.actualizar()
+        except Exception as exc:
+            self.log_msg(f"No se pudieron regenerar el listado y el PDF: {exc}")
+            messagebox.showwarning("Archivos sin actualizar", str(exc))
 
     def log_msg(self, texto: str):
         self.log.config(state="normal")
@@ -410,11 +750,22 @@ class ScannerApp(tk.Tk):
             messagebox.showinfo("Ya existe", f"La IP {ip} ya está en el listado.")
             return
 
-        impresora = {"ip": ip, "marca": self.combo_marca.get()}
+        area = self.combo_area.get().strip()
+        if area not in self.areas:
+            messagebox.showwarning("Área requerida", "Seleccioná un área configurada.")
+            return
+
+        impresora = {"ip": ip, "marca": self.combo_marca.get(), "area": area}
+        try:
+            actualizar_listado.establecer_area_impresora(ip, impresora["marca"], area)
+        except Exception as exc:
+            messagebox.showerror("No se pudo guardar el área", str(exc))
+            return
         self.ips.append(impresora)
         self.listbox.insert("end", self._texto_impresora(impresora))
         self.entry_ip.delete(0, "end")
         save_ips(self.ips)
+        self._actualizar_archivos()
 
     def quitar_ip(self):
         seleccion = list(self.listbox.curselection())
@@ -449,17 +800,20 @@ class ScannerApp(tk.Tk):
         hilo.start()
 
     def _correr_escaneo_en_hilo(self, timeout: int):
+        areas_por_ip = {impresora["ip"]: impresora.get("area", "") for impresora in self.ips}
+
         def progreso_callback(i, total, ip, data):
             def actualizar():
+                ip_con_area = f"{ip} [Área: {areas_por_ip.get(ip) or 'sin asignar'}]"
                 self.progress.config(value=i)
                 if data is None:
-                    self.log_msg(f"[{i}/{total}] Consultando {ip} ...")
+                    self.log_msg(f"[{i}/{total}] Consultando {ip_con_area} ...")
                 else:
                     if data["error"]:
-                        self.log_msg(f"[{i}/{total}] {ip} -> ERROR: {data['error']}")
+                        self.log_msg(f"[{i}/{total}] {ip_con_area} -> ERROR: {data['error']}")
                     else:
                         toner_txt = ", ".join(f"{c}={v}%" for c, v in data["toner"].items()) or "sin datos de tóner"
-                        self.log_msg(f"[{i}/{total}] {ip} -> {data['modelo']} | {toner_txt}")
+                        self.log_msg(f"[{i}/{total}] {ip_con_area} -> {data['modelo']} | {toner_txt}")
 
             self.after(0, actualizar)
 

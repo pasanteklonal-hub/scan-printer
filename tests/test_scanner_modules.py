@@ -2,11 +2,14 @@
 
 import json
 import asyncio
+import sqlite3
 import tempfile
 import unittest
 from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
+
+from openpyxl import load_workbook
 
 import actualizar_listado
 from prediccion_toners import (
@@ -21,14 +24,17 @@ from scanner_db import (
     init_db,
     load_ips,
     load_last_results,
+    load_area_options,
     load_printer_commands,
     load_printers,
     save_ips,
+    save_area_options,
     save_printer_commands,
     save_scan_results,
     sanitize_for_json,
 )
 from scanner_service import (
+    COMMAND_OUTPUT_SCHEMA,
     IP_REGEX,
     _extraer_numero_serie,
     consultar_con_comando,
@@ -193,6 +199,64 @@ class TestScannerService(unittest.TestCase):
         self.assertEqual(resultado["toner"], {})
         self.assertIsNone(resultado["error"])
 
+    def test_comando_usa_modelo_del_formulario_y_conserva_estructura_comun(self):
+        resultado = asyncio.run(
+            consultar_con_comando(
+                "192.168.0.40",
+                "Lexmark",
+                'printf \'{"toner":{"Black":80},"paginas":{"impresiones_totales":123}}\'',
+                [
+                    {"clave": "toner", "tipo": "object"},
+                    {"clave": "paginas", "tipo": "object"},
+                ],
+                modelo="MX-510",
+            )
+        )
+
+        self.assertIsNone(resultado["error"])
+        self.assertEqual(resultado["modelo"], "MX-510")
+        self.assertEqual(resultado["toner"], {"Black": 80})
+        self.assertEqual(resultado["paginas"], {"impresiones_totales": 123})
+        self.assertIn("numero_serie", resultado)
+        self.assertIn("mac", resultado)
+        self.assertIn("online", resultado)
+        self.assertIn("estado", resultado)
+
+    def test_escaneo_aplica_modelo_configurado_al_resultado(self):
+        resultado = asyncio.run(
+            consultar_todas(
+                [{"ip": "192.0.2.40", "marca": "Lexmark"}],
+                timeout=2,
+                comandos={
+                    "Lexmark": {
+                        "comando": 'printf \'{"toner":{},"paginas":{}}\'',
+                        "salida": [dict(campo) for campo in COMMAND_OUTPUT_SCHEMA],
+                        "modelo": "MX-510",
+                    }
+                },
+            )
+        )
+
+        self.assertIsNone(resultado[0]["error"])
+        self.assertEqual(resultado[0]["modelo"], "MX-510")
+
+    def test_comando_rechaza_salida_sin_datos_requeridos(self):
+        resultado = asyncio.run(
+            consultar_con_comando(
+                "192.168.0.40",
+                "Lexmark",
+                'printf \'{"toner":{}}\'',
+                [
+                    {"clave": "toner", "tipo": "object"},
+                    {"clave": "paginas", "tipo": "object"},
+                ],
+                modelo="MX-510",
+            )
+        )
+
+        self.assertFalse(resultado["online"])
+        self.assertIn("faltan claves declaradas: paginas", resultado["error"])
+
     def test_comando_rechaza_claves_declaradas_ausentes(self):
         resultado = asyncio.run(
             consultar_con_comando("192.168.0.40", "Lexmark", "printf '{}'", ["modelo"])
@@ -263,6 +327,84 @@ class TestPrediccionToners(unittest.TestCase):
 
 
 class TestActualizarListado(unittest.TestCase):
+    def test_establecer_area_agrega_ip_al_libro_base(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_path = Path(temp_dir) / "impresoras.xlsx"
+            workbook = load_workbook(actualizar_listado.ARCHIVO_BASE)
+            workbook.save(base_path)
+            workbook.close()
+
+            with patch.object(actualizar_listado, "ARCHIVO_BASE", base_path), \
+                 patch.object(actualizar_listado, "ARCHIVO_SALIDA", Path(temp_dir) / "salida.xlsx"), \
+                 patch.object(actualizar_listado, "obtener_ultimo_json", side_effect=FileNotFoundError):
+                actualizar_listado.establecer_area_impresora(
+                    "192.0.2.55", "HP", "VENTAS"
+                )
+
+            ws = load_workbook(base_path, read_only=True, data_only=True).active
+            headers = {str(cell.value).strip().upper(): cell.column for cell in ws[1]}
+            row = next(
+                values for values in ws.iter_rows(min_row=2, values_only=True)
+                if values[headers["IP"] - 1] == "192.0.2.55"
+            )
+            self.assertEqual(row[headers["MARCA"] - 1], "HP")
+            self.assertEqual(row[headers["SECTOR"] - 1], "VENTAS")
+            ws.parent.close()
+
+    def test_establecer_area_actualiza_impresora_existente(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_path = Path(temp_dir) / "impresoras.xlsx"
+            workbook = load_workbook(actualizar_listado.ARCHIVO_BASE)
+            sheet = workbook.active
+            headers = {
+                str(cell.value).strip().upper(): cell.column
+                for cell in sheet[1]
+                if cell.value is not None
+            }
+            row = sheet.max_row + 1
+            sheet.cell(row=row, column=headers["IP"], value="192.0.2.56")
+            sheet.cell(row=row, column=headers["MARCA"], value="HP")
+            sheet.cell(row=row, column=headers["SECTOR"], value="GARANTIA")
+            workbook.save(base_path)
+            workbook.close()
+
+            with patch.object(actualizar_listado, "ARCHIVO_BASE", base_path):
+                actualizar_listado.establecer_area_impresora(
+                    "192.0.2.56", "HP", "PLANEAMIENTO"
+                )
+
+            ws = load_workbook(base_path, read_only=True, data_only=True).active
+            values = next(
+                values for values in ws.iter_rows(min_row=2, values_only=True)
+                if values[headers["IP"] - 1] == "192.0.2.56"
+            )
+            self.assertEqual(values[headers["SECTOR"] - 1], "PLANEAMIENTO")
+            ws.parent.close()
+
+    def test_lookup_prefers_ip_when_printer_mac_changes(self):
+        printer = {
+            "IP:192.168.0.71": {
+                "IP": "192.168.0.71",
+                "MAC": "00:15:99:A8:A3:E9",
+                "MARCA": "Samsung",
+                "MODELO": "Samsung ML-371x Series",
+            },
+            "48:0F:CF:F9:41:7B": {
+                "IP": "192.168.0.71",
+                "MAC": "48:0F:CF:F9:41:7B",
+                "MARCA": "HP",
+                "MODELO": "HP LaserJet M402dn",
+            },
+        }
+
+        result = actualizar_listado.buscar_impresora(
+            printer, "48:0F:CF:F9:41:7B", "192.168.0.71"
+        )
+
+        self.assertEqual(result["MAC"], "00:15:99:A8:A3:E9")
+        self.assertEqual(result["MARCA"], "Samsung")
+        self.assertEqual(result["MODELO"], "Samsung ML-371x Series")
+
     def test_exportar_pdf_libreoffice_overwrites_existing_pdf(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
@@ -309,15 +451,38 @@ class TestScannerDb(unittest.TestCase):
         save_ips(["192.168.0.10", "192.168.0.20"], db_path=self.db_path)
         self.assertEqual(load_ips(db_path=self.db_path), ["192.168.0.10", "192.168.0.20"])
 
+    def test_init_db_adds_area_to_existing_schema(self):
+        legacy_path = Path(self.temp_dir.name) / "legacy.db"
+        conn = sqlite3.connect(legacy_path)
+        conn.execute(
+            "CREATE TABLE ips (ip TEXT PRIMARY KEY, marca TEXT NOT NULL DEFAULT 'Samsung')"
+        )
+        conn.execute("INSERT INTO ips(ip, marca) VALUES (?, ?)", ("192.0.2.80", "HP"))
+        conn.commit()
+        conn.close()
+
+        init_db(db_path=legacy_path)
+
+        self.assertEqual(
+            load_printers(db_path=legacy_path),
+            [{"ip": "192.0.2.80", "marca": "HP", "area": ""}],
+        )
+
     def test_save_and_load_printers_with_brand(self):
         save_ips([
-            {"ip": "192.168.0.10", "marca": "Samsung"},
-            {"ip": "192.168.0.20", "marca": "HP"},
+            {"ip": "192.168.0.10", "marca": "Samsung", "area": "INGENIERIA"},
+            {"ip": "192.168.0.20", "marca": "HP", "area": "GARANTIA"},
         ], db_path=self.db_path)
         self.assertEqual(load_printers(db_path=self.db_path), [
-            {"ip": "192.168.0.10", "marca": "Samsung"},
-            {"ip": "192.168.0.20", "marca": "HP"},
+            {"ip": "192.168.0.10", "marca": "Samsung", "area": "INGENIERIA"},
+            {"ip": "192.168.0.20", "marca": "HP", "area": "GARANTIA"},
         ])
+
+    def test_load_area_options_creates_defaults_and_saves_custom_options(self):
+        options_path = Path(self.temp_dir.name) / "areas.json"
+        self.assertIn("VENTAS", load_area_options(options_path))
+        save_area_options(["INGENIERIA", "NUEVA AREA"], areas_path=options_path)
+        self.assertEqual(load_area_options(options_path), ["INGENIERIA", "NUEVA AREA"])
 
     def test_save_and_load_results(self):
         results = [{"ip": "192.168.0.10", "modelo": "X", "toner": {"cyan": 80}, "error": None}]

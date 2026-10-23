@@ -89,6 +89,9 @@ def leer_json(ruta_json):
 
         registro = {
             "IP": imp.get("ip", ""),
+            "MAC": imp.get("mac") or "",
+            "MARCA": imp.get("marca") or "",
+            "MODELO": imp.get("modelo") or "",
             "NIVEL_TONER": toner,
             "IMPRESIONES_TOTALES": paginas,
             "NUMERO_SERIE": imp.get("numero_serie", ""),
@@ -99,6 +102,122 @@ def leer_json(ruta_json):
             indice[f"IP:{ip}"] = registro
 
     return indice
+
+
+def buscar_impresora(datos, mac, ip):
+    ip = normalizar_ip(ip)
+    if ip:
+        registro = datos.get(f"IP:{ip}")
+        if registro:
+            return registro
+
+    mac = normalizar_mac(mac)
+    return datos.get(mac, {})
+
+
+def obtener_area_impresora(ip):
+    ip = normalizar_ip(ip)
+    for ruta in (ARCHIVO_BASE, ARCHIVO_SALIDA):
+        if not ruta.exists():
+            continue
+        wb = load_workbook(ruta, read_only=True, data_only=True)
+        ws = wb.active
+        columnas = {
+            str(c.value).strip().upper(): c.column
+            for c in ws[1]
+            if c.value is not None
+        }
+        if "IP" in columnas and "SECTOR" in columnas:
+            for fila in ws.iter_rows(min_row=2, values_only=True):
+                if normalizar_ip(fila[columnas["IP"] - 1]) == ip:
+                    area = fila[columnas["SECTOR"] - 1]
+                    wb.close()
+                    return str(area).strip() if area else ""
+        wb.close()
+    return ""
+
+
+def areas_en_uso():
+    areas = set()
+    for ruta in (ARCHIVO_BASE, ARCHIVO_SALIDA):
+        if not ruta.exists():
+            continue
+        wb = load_workbook(ruta, read_only=True, data_only=True)
+        ws = wb.active
+        columnas = {
+            str(c.value).strip().upper(): c.column
+            for c in ws[1]
+            if c.value is not None
+        }
+        columna_area = columnas.get("SECTOR") or columnas.get("AREA") or columnas.get("ÁREA")
+        if columna_area:
+            areas.update(
+                str(fila[columna_area - 1]).strip()
+                for fila in ws.iter_rows(min_row=2, values_only=True)
+                if fila[columna_area - 1] is not None
+                and str(fila[columna_area - 1]).strip()
+            )
+        wb.close()
+    return areas
+
+
+def establecer_area_impresora(ip, marca, area):
+    ip = normalizar_ip(ip)
+    wb = load_workbook(ARCHIVO_BASE)
+    ws = wb.active
+    columnas = {
+        str(c.value).strip().upper(): c.column
+        for c in ws[1]
+        if c.value is not None
+    }
+    for campo in ("IP", "MARCA", "SECTOR"):
+        if campo not in columnas:
+            columnas[campo] = ws.max_column + 1
+            ws.cell(row=1, column=columnas[campo], value=campo)
+
+    fila_objetivo = None
+    for fila in range(2, ws.max_row + 1):
+        if normalizar_ip(ws.cell(fila, columnas["IP"]).value) == ip:
+            fila_objetivo = fila
+            break
+
+    if fila_objetivo is None:
+        mac = None
+        if ARCHIVO_SALIDA.exists():
+            salida = load_workbook(ARCHIVO_SALIDA, read_only=True, data_only=True)
+            hoja_salida = salida.active
+            columnas_salida = {
+                str(c.value).strip().upper(): c.column
+                for c in hoja_salida[1]
+                if c.value is not None
+            }
+            if "IP" in columnas_salida and "MAC" in columnas_salida:
+                for fila in hoja_salida.iter_rows(min_row=2, values_only=True):
+                    if normalizar_ip(fila[columnas_salida["IP"] - 1]) == ip:
+                        mac = normalizar_mac(fila[columnas_salida["MAC"] - 1])
+                        break
+            salida.close()
+        if not mac:
+            try:
+                mac = leer_json(obtener_ultimo_json()).get(f"IP:{ip}", {}).get("MAC")
+            except FileNotFoundError:
+                mac = None
+        if mac and "MAC" in columnas:
+            for fila in range(2, ws.max_row + 1):
+                if normalizar_mac(ws.cell(fila, columnas["MAC"]).value) == normalizar_mac(mac):
+                    fila_objetivo = fila
+                    break
+
+    if fila_objetivo is None:
+        fila_objetivo = ws.max_row + 1
+        ws.cell(row=fila_objetivo, column=columnas["IP"], value=ip)
+        ws.cell(row=fila_objetivo, column=columnas["MARCA"], value=marca)
+    else:
+        ws.cell(row=fila_objetivo, column=columnas["IP"], value=ip)
+        if not ws.cell(fila_objetivo, column=columnas["MARCA"]).value:
+            ws.cell(row=fila_objetivo, column=columnas["MARCA"], value=marca)
+    ws.cell(row=fila_objetivo, column=columnas["SECTOR"], value=area)
+    wb.save(ARCHIVO_BASE)
 
 
 def aplicar_formato():
@@ -253,7 +372,10 @@ def aplicar_formato():
                     len(str(celda.value))
                 )
 
-        ws.column_dimensions[letra].width = ancho + 3
+        ancho_columna = ancho + 3
+        if str(columna[0].value).strip().upper() == "MODELO":
+            ancho_columna = min(ancho_columna, 25)
+        ws.column_dimensions[letra].width = ancho_columna
 
     # Congelar encabezado
 
@@ -288,12 +410,23 @@ def actualizar():
     datos = leer_json(ultimo_json)
 
     def obtener_dato(fila, campo):
-        registro = datos.get(fila["MAC"])
-        if registro is None:
-            registro = datos.get(f"IP:{ips_base.loc[fila.name]}", {})
+        registro = buscar_impresora(
+            datos,
+            fila.get("MAC"),
+            ips_base.loc[fila.name],
+        )
         return registro.get(campo, "")
 
-    df["IP"] = df.apply(lambda fila: obtener_dato(fila, "IP"), axis=1)
+    for campo in ("MAC", "MARCA", "MODELO"):
+        df[campo] = df.apply(
+            lambda fila: obtener_dato(fila, campo) or fila.get(campo, ""),
+            axis=1,
+        )
+
+    df["IP"] = df.apply(
+        lambda fila: obtener_dato(fila, "IP") or ips_base.loc[fila.name] or "",
+        axis=1,
+    )
 
     df["NIVEL_TONER"] = df.apply(lambda fila: obtener_dato(fila, "NIVEL_TONER"), axis=1)
 
@@ -347,7 +480,8 @@ def exportar_pdf_libreoffice():
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
+    ws.page_setup.fitToHeight = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
 
     wb.save(temporal)
     wb.close()

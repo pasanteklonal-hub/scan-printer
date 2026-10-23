@@ -15,6 +15,25 @@ from app_paths import APP_DIR
 DEFAULT_DB_PATH = APP_DIR / "estado-impresoras" / "scanner.db"
 LEGACY_DB_PATH = APP_DIR / "scanner.db"
 COMMANDS_PATH = APP_DIR / "estado-impresoras" / "comandos_impresoras.json"
+AREAS_PATH = APP_DIR / "estado-impresoras" / "areas.json"
+DEFAULT_AREAS = [
+    "INGENIERIA",
+    "GARANTIA",
+    "DESARROLLO",
+    "MATERIAS-PRIMAS",
+    "CONTROL",
+    "NO BETA",
+    "SUPERVISORES",
+    "AR",
+    "CONTADURIA",
+    "VENTAS",
+    "PLANEAMIENTO",
+    "DESARROLLO1",
+    "DESARROLLO2",
+    "MATERIAS PRIMAS",
+    "CONTROL1",
+    "CONTROL2",
+]
 
 
 def sanitize_for_json(value: Any) -> Any:
@@ -40,13 +59,16 @@ def init_db(db_path: Optional[Path | str] = None) -> Path:
             """
             CREATE TABLE IF NOT EXISTS ips (
                 ip TEXT PRIMARY KEY,
-                marca TEXT NOT NULL DEFAULT 'Samsung'
+                marca TEXT NOT NULL DEFAULT 'Samsung',
+                area TEXT NOT NULL DEFAULT ''
             )
             """
         )
         columns = {row[1] for row in conn.execute("PRAGMA table_info(ips)")}
         if "marca" not in columns:
             conn.execute("ALTER TABLE ips ADD COLUMN marca TEXT NOT NULL DEFAULT 'Samsung'")
+        if "area" not in columns:
+            conn.execute("ALTER TABLE ips ADD COLUMN area TEXT NOT NULL DEFAULT ''")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS scan_results (
@@ -87,11 +109,11 @@ def save_ips(ips: list[str | dict], db_path: Optional[Path | str] = None) -> Non
     try:
         conn.execute("DELETE FROM ips")
         conn.executemany(
-            "INSERT INTO ips(ip, marca) VALUES (?, ?)",
+            "INSERT INTO ips(ip, marca, area) VALUES (?, ?, ?)",
             [
-                (item["ip"], item.get("marca", "Samsung"))
+                (item["ip"], item.get("marca", "Samsung"), item.get("area", ""))
                 if isinstance(item, dict)
-                else (item, "Samsung")
+                else (item, "Samsung", "")
                 for item in ips
             ],
         )
@@ -114,10 +136,36 @@ def load_printers(db_path: Optional[Path | str] = None) -> list[dict]:
     path = init_db(db_path)
     conn = sqlite3.connect(path)
     try:
-        rows = conn.execute("SELECT ip, marca FROM ips ORDER BY ip").fetchall()
+        rows = conn.execute("SELECT ip, marca, area FROM ips ORDER BY ip").fetchall()
     finally:
         conn.close()
-    return [{"ip": row[0], "marca": row[1]} for row in rows]
+    return [{"ip": row[0], "marca": row[1], "area": row[2]} for row in rows]
+
+
+def load_area_options(areas_path: Optional[Path | str] = None) -> list[str]:
+    path = Path(areas_path or AREAS_PATH)
+    if not path.exists():
+        save_area_options(DEFAULT_AREAS, areas_path=path)
+        return DEFAULT_AREAS.copy()
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            payload = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return DEFAULT_AREAS.copy()
+    if not isinstance(payload, list):
+        return DEFAULT_AREAS.copy()
+    options = list(dict.fromkeys(
+        str(area).strip() for area in payload if str(area).strip()
+    ))
+    return options or DEFAULT_AREAS.copy()
+
+
+def save_area_options(areas: list[str], areas_path: Optional[Path | str] = None) -> None:
+    path = Path(areas_path or AREAS_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    options = list(dict.fromkeys(str(area).strip() for area in areas if str(area).strip()))
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(options, file, indent=2, ensure_ascii=False)
 
 
 def load_printer_commands(commands_path: Optional[Path | str] = None) -> list[dict]:

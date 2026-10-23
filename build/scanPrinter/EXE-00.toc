@@ -48,7 +48,7 @@
  [],
  False,
  False,
- 1789583438,
+ 1789675057,
  [('run',
    '/home/sistemas5/apps/scanPrinter/env/lib/python3.13/site-packages/PyInstaller/bootloader/Linux-64bit-intel/run',
    'EXECUTABLE')],

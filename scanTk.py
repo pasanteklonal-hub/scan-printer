@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Punto de entrada principal de la interfaz gráfica refactorizada.
 
 Este módulo inicia la aplicación Tkinter importando la clase principal

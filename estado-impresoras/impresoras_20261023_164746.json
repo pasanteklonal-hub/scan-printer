@@ -1,0 +1,195 @@
+[
+  {
+    "ip": "192.168.0.101",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:3B:83",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00009K",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 44
+    },
+    "paginas": {
+      "impresiones_totales": 155916
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.28",
+    "marca": "Samsung",
+    "mac": "00:15:99:A8:A3:FE",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THB8GC6F003HR",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 36
+    },
+    "paginas": {
+      "impresiones_totales": 187627
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.30",
+    "marca": "HP",
+    "online": false,
+    "error": "Timeout (8s) sin respuesta."
+  },
+  {
+    "ip": "192.168.0.32",
+    "marca": "Samsung",
+    "mac": "00:15:99:8D:02:A1",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBADB800079R",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 86
+    },
+    "paginas": {
+      "impresiones_totales": 36793
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.35",
+    "marca": "Ricoh",
+    "mac": "58:38:79:19:20:EA",
+    "modelo": "RICOH SP 3710SF V1.03 / RICOH Network Printer C model / RICOH Network Scanner C model / RICOH Network Facsimile C model",
+    "numero_serie": "5178ZB30564",
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "Black": 0
+    },
+    "paginas": {
+      "impresiones_totales": 85453
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.59",
+    "marca": "HP",
+    "mac": null,
+    "modelo": null,
+    "numero_serie": null,
+    "online": false,
+    "estado": "OK",
+    "toner": {},
+    "paginas": {},
+    "error": "Error ejecutando comando: comando terminó con error"
+  },
+  {
+    "mac": "",
+    "modelo": "Laserjet 2430",
+    "numero_serie": null,
+    "online": true,
+    "estado": "OK",
+    "toner": {
+      "Black": 48
+    },
+    "paginas": {},
+    "error": null,
+    "sn": "BRCX100277",
+    "ip": "192.168.0.68",
+    "marca": "HP"
+  },
+  {
+    "ip": "192.168.0.70",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:38:3E",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00113N",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 39
+    },
+    "paginas": {
+      "impresiones_totales": 117792
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.71",
+    "marca": "Samsung",
+    "mac": "00:15:99:A8:A3:E9",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THB8GC6F003RB",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 32
+    },
+    "paginas": {
+      "impresiones_totales": 144042
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.80",
+    "marca": "Samsung",
+    "mac": "00:15:99:A8:A3:C3",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THB8GC6F001EM",
+    "online": true,
+    "estado": "SyncthruState.NORMAL",
+    "toner": {
+      "black": 33
+    },
+    "paginas": {
+      "impresiones_totales": 114009
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.0.81",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:3B:85",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00004W",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 81
+    },
+    "paginas": {
+      "impresiones_totales": 206138
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.46",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:37:AA",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00050W",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 90
+    },
+    "paginas": {
+      "impresiones_totales": 160519
+    },
+    "error": null
+  },
+  {
+    "ip": "192.168.1.47",
+    "marca": "Samsung",
+    "mac": "00:15:99:97:37:A6",
+    "modelo": "Samsung ML-371x Series",
+    "numero_serie": "Z5THBAGBC00125X",
+    "online": true,
+    "estado": "SyncthruState.WARNING",
+    "toner": {
+      "black": 21
+    },
+    "paginas": {
+      "impresiones_totales": 331923
+    },
+    "error": null
+  }
+]
